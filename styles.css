@@ -1,3 +1,13 @@
+@font-face {
+  font-family: "Fredoka";
+  font-style: normal;
+  font-weight: 300 700;
+  font-stretch: 100%;
+  font-display: swap;
+  src: url("fonts/fredoka-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 /* ===================== Base ===================== */
 :root {
   --bg: #0a0d14;
@@ -19,6 +29,7 @@
   --shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
   --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, "Times New Roman", serif;
+  --display: "Fredoka", "Trebuchet MS", var(--font);
 }
 
 * { box-sizing: border-box; }
@@ -132,10 +143,10 @@ h1, h2, h3, p { margin: 0; }
 .brand-copy { display: flex; flex-direction: column; line-height: 1.1; }
 
 .brand-name {
-  font-family: var(--serif);
-  font-size: 21px;
-  letter-spacing: 0.02em;
-  font-weight: 600;
+  font-family: var(--display);
+  font-size: 23px;
+  letter-spacing: 0.015em;
+  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -2696,3 +2707,231 @@ kbd {
   .crop-controls { max-width: 250px; }
 }
 
+
+
+/* ===================== Grupos de familia ===================== */
+.side-note {
+  padding: 0 6px;
+  margin: -4px 0 8px;
+  font-size: 10.5px;
+  color: var(--faint);
+  line-height: 1.4;
+}
+
+.group-row .section-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.group-row .section-count {
+  min-width: 18px;
+  text-align: right;
+}
+
+.group-row.active .section-count { color: var(--accent); }
+
+/* ===================== Contactos en la ficha ===================== */
+.contacts-section .detail-section-head h2 { color: #dbe2ee; }
+
+.contact-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.contact-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 11px 5px 5px;
+  border-radius: 11px;
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.03);
+  color: inherit;
+  text-align: left;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+
+.contact-chip:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(242, 193, 78, 0.28);
+  transform: translateY(-1px);
+}
+
+.contact-chip-avatar {
+  width: 27px;
+  height: 27px;
+  flex-basis: 27px;
+  border-radius: 8px;
+}
+
+.contact-chip-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.contact-chip-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #dbe2ee;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-chip-type {
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* ===================== Tarjeta flotante de contactos ===================== */
+.contact-card {
+  position: fixed;
+  z-index: 130;
+  width: 258px;
+  max-width: calc(100vw - 24px);
+  padding: 12px;
+  border-radius: 15px;
+  border: 1px solid var(--border);
+  background: rgba(16, 21, 32, 0.97);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  animation: contactCardIn 0.14s ease-out;
+}
+
+@keyframes contactCardIn {
+  from { opacity: 0; transform: translateY(4px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.contact-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 4px 9px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.contact-card-eyebrow {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.contact-card-title {
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.contact-card-sub {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.contact-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 7px;
+}
+
+.contact-card-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.contact-card-row:hover,
+.contact-card-row:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-soft);
+}
+
+.contact-card-avatar {
+  width: 28px;
+  height: 28px;
+  flex-basis: 28px;
+  border-radius: 8px;
+}
+
+.contact-card-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.contact-card-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #dbe2ee;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.contact-card-type {
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.contact-card-more,
+.contact-card-hint {
+  padding: 7px 6px 0;
+  font-size: 10px;
+  color: var(--faint);
+  line-height: 1.45;
+}
+
+.contact-card-hint {
+  margin-top: 6px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 7px;
+}
+
+[data-theme="light"] .contact-card {
+  background: rgba(255, 252, 245, 0.98);
+  border-color: #ddd2bd;
+  box-shadow: 0 22px 60px rgba(80, 62, 34, 0.24);
+}
+
+[data-theme="light"] .contact-card-title { color: #2c2418; }
+[data-theme="light"] .contact-card-name,
+[data-theme="light"] .contact-chip-name,
+[data-theme="light"] .contacts-section .detail-section-head h2 { color: #3a3225; }
+
+[data-theme="light"] .contact-card-row:hover,
+[data-theme="light"] .contact-card-row:focus-visible,
+[data-theme="light"] .contact-chip:hover { background: rgba(70, 52, 25, 0.07); }
+
+[data-theme="light"] .contact-chip {
+  background: rgba(70, 52, 25, 0.035);
+  border-color: #e2d8c5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contact-card { animation: none; }
+  .contact-chip:hover { transform: none; }
+}
