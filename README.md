@@ -11,10 +11,12 @@
 ## Características
 
 - Fichas de personaje con foto recortable (editor de encuadre y zoom).
-- Secciones, búsqueda y filtros por familia/amistades.
-- Vínculos con distinto grosor según la cercanía.
+- Grupos de familia independientes: cada uno con su propio árbol, personajes y vínculos.
+- Contactos y conocidos a un vistazo al pasar el cursor sobre una tarjeta en modo Familia.
+- Búsqueda de personajes y vínculos con distinto grosor según la cercanía.
 - Árbol organizable, zoom y desplazamiento.
 - Temas claro y oscuro automáticos.
+- Tipografía del título: [Fredoka](https://github.com/hafontia/Fredoka-One) (SIL Open Font License, incluida en `fonts/`).
 - Exportación e importación de respaldos en JSON.
 
 ## Sincronización
@@ -64,3 +66,4 @@ Luego visita <http://127.0.0.1:8123>.
 - `app.js` — estado, almacenamiento, sincronización, editor de fotos y dibujo del árbol.
 - `manifest.webmanifest` y `service-worker.js` — soporte PWA.
 - `icons/` — iconos de la aplicación.
+- `fonts/` — Fredoka (título) y su licencia OFL.
