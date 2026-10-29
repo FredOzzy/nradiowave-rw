@@ -15,6 +15,15 @@
   const THEME_KEY = "nradiowave.theme.v1";
   const PANEL_KEY = "nradiowave.panels.v1";
   const LAYOUT_KEY = "nradiowave.layout.v2";
+
+  /* Sincronización compartida con Firebase Realtime Database.
+     Pega aquí la URL de tu base de datos, por ejemplo:
+     const SYNC_URL = "https://mi-proyecto-default-rtdb.firebaseio.com";
+     Con la URL vacía la app funciona solo con el almacenamiento local. */
+  const SYNC_URL = "https://nradiowave-rw-default-rtdb.firebaseio.com";
+  const SYNC_PATH = "nradiowave";
+  const PENDING_KEY = "nradiowave.pending.v1";
+
   const LEGACY_KEYS = {
     wiki: "nexo.wiki.v1",
     theme: "nexo.theme.v1",
@@ -204,6 +213,7 @@
   let themeMode = "auto";
   let cropState = null;
   let els = {};
+  let sync = null;
 
   const ui = {
     selectedId: null,
@@ -388,7 +398,7 @@
     }
   }
 
-  function saveData() {
+  function saveData({ fromRemote = false } = {}) {
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
@@ -411,6 +421,7 @@
       }
       console.warn("Nradiowave: no se pudo guardar.", error);
     }
+    if (!fromRemote) queueSync();
   }
 
   function scheduleSave() {
@@ -419,6 +430,555 @@
       saveTimer = null;
       saveData();
     }, 450);
+  }
+
+  /* ---------------- Sincronización compartida ----------------
+     El árbol vive en Firebase Realtime Database. Las reglas del
+     proyecto permiten leer y escribir sin cuenta: quien tenga el
+     enlace puede editar. Cada cambio se envía por rutas concretas
+     (PATCH) para no reenviar las fotos de todo el árbol. */
+  function emptyRemote() {
+    return { sections: [], people: {}, relations: {} };
+  }
+
+  function syncKeyMap(items) {
+    const map = {};
+    items.forEach((item) => {
+      let key = String(item.id).replace(/[.#$/\[\]]/g, "_");
+      if (!key) key = "item";
+      let candidate = key;
+      let suffix = 2;
+      while (map[candidate] && String(map[candidate].id) !== String(item.id)) {
+        candidate = `${key}_${suffix}`;
+        suffix += 1;
+      }
+      map[candidate] = { ...item };
+    });
+    return map;
+  }
+
+  function localSnapshot() {
+    return {
+      sections: data.sections.map((section) => ({ ...section })),
+      people: syncKeyMap(data.people),
+      relations: syncKeyMap(data.relations),
+    };
+  }
+
+  function normalizeRemote(raw) {
+    const out = emptyRemote();
+    if (!raw || typeof raw !== "object") return out;
+
+    const rawSections = Array.isArray(raw.sections)
+      ? raw.sections
+      : raw.sections && typeof raw.sections === "object"
+        ? Object.keys(raw.sections)
+            .sort((a, b) => Number(a) - Number(b))
+            .map((key) => raw.sections[key])
+        : [];
+    rawSections.forEach((section) => {
+      if (section && typeof section === "object") out.sections.push({ ...section });
+    });
+
+    const collect = (source, target) => {
+      if (!source || typeof source !== "object") return;
+      Object.entries(source).forEach(([key, value]) => {
+        if (!value || typeof value !== "object") return;
+        target[key] = { ...value };
+      });
+    };
+    collect(raw.people, out.people);
+    collect(raw.relations, out.relations);
+    return out;
+  }
+
+  function remoteToLocal(remote) {
+    const people = Object.entries(remote.people).map(([key, person]) => ({
+      ...person,
+      id: person && person.id != null ? person.id : key,
+    }));
+    const relations = Object.entries(remote.relations).map(([key, relation]) => ({
+      ...relation,
+      id: relation && relation.id != null ? relation.id : key,
+    }));
+    return sanitize({ sections: remote.sections, people, relations });
+  }
+
+  function stable(value) {
+    if (value === null || typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map(stable).join(",")}]`;
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stable(value[key])}`)
+      .join(",")}}`;
+  }
+
+  function diffRemote(prev, next) {
+    const patch = {};
+    if (stable(prev.sections) !== stable(next.sections)) {
+      patch.sections = next.sections;
+    }
+    Object.entries(next.people).forEach(([key, person]) => {
+      if (stable(prev.people[key]) !== stable(person)) patch[`people/${key}`] = person;
+    });
+    Object.keys(prev.people).forEach((key) => {
+      if (!(key in next.people)) patch[`people/${key}`] = null;
+    });
+    Object.entries(next.relations).forEach(([key, relation]) => {
+      if (stable(prev.relations[key]) !== stable(relation)) patch[`relations/${key}`] = relation;
+    });
+    Object.keys(prev.relations).forEach((key) => {
+      if (!(key in next.relations)) patch[`relations/${key}`] = null;
+    });
+    return patch;
+  }
+
+  function setRemotePath(remote, path, value) {
+    const parts = String(path || "")
+      .split("/")
+      .filter(Boolean);
+    if (!parts.length) {
+      if (value && typeof value === "object") {
+        const normalized = normalizeRemote(value);
+        remote.sections = normalized.sections;
+        remote.people = normalized.people;
+        remote.relations = normalized.relations;
+      } else {
+        remote.sections = [];
+        remote.people = {};
+        remote.relations = {};
+      }
+      return;
+    }
+    let cursor = remote;
+    for (let index = 0; index < parts.length - 1; index += 1) {
+      const part = parts[index];
+      if (!cursor[part] || typeof cursor[part] !== "object") cursor[part] = {};
+      cursor = cursor[part];
+    }
+    const last = parts[parts.length - 1];
+    if (value === null || value === undefined) delete cursor[last];
+    else cursor[last] = value;
+  }
+
+  function applyPatch(remote, patch) {
+    Object.entries(patch).forEach(([path, value]) => setRemotePath(remote, path, value));
+  }
+
+  function isBusyForSync() {
+    return Boolean(
+      ui.pan ||
+        ui.connect.active ||
+        cropState ||
+        document.querySelector(".node.dragging") ||
+        document.querySelector("dialog[open]")
+    );
+  }
+
+  function applyRemoteSnapshot(remote, { initial = false } = {}) {
+    if (!sync) return;
+    if (!initial && isBusyForSync()) {
+      sync.deferred = remote;
+      scheduleDeferredApply();
+      return;
+    }
+    sync.deferred = null;
+    sync.remote = remote;
+
+    const effective = {
+      sections: remote.sections.slice(),
+      people: { ...remote.people },
+      relations: { ...remote.relations },
+    };
+    if (Object.keys(sync.pending).length) applyPatch(effective, sync.pending);
+
+    const next = remoteToLocal(effective);
+    sync.lastAt = Date.now();
+    const changed = stable(next) !== stable(data);
+    if (changed) {
+      data = next;
+      if (ui.selectedId && !data.people.some((person) => person.id === ui.selectedId)) {
+        ui.selectedId = null;
+      }
+      if (ui.focusRootId && !data.people.some((person) => person.id === ui.focusRootId)) {
+        ui.focusRootId = null;
+      }
+      if (ui.sectionFilter && !data.sections.some((section) => section.id === ui.sectionFilter)) {
+        ui.sectionFilter = null;
+      }
+      renderAll();
+      saveData({ fromRemote: true });
+    }
+    renderSyncStatus();
+    if (changed && !initial) {
+      toast("El árbol se actualizó desde otro dispositivo.", "info");
+    }
+  }
+
+  function scheduleDeferredApply() {
+    if (!sync || sync.deferTimer) return;
+    sync.deferTimer = window.setTimeout(() => {
+      if (!sync) return;
+      sync.deferTimer = null;
+      const pendingRemote = sync.deferred;
+      if (!pendingRemote) return;
+      if (isBusyForSync()) {
+        scheduleDeferredApply();
+        return;
+      }
+      applyRemoteSnapshot(pendingRemote);
+    }, 450);
+  }
+
+  function readPending() {
+    try {
+      const raw = JSON.parse(readStored(PENDING_KEY) || "{}");
+      return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function writePending() {
+    if (!sync) return;
+    try {
+      if (Object.keys(sync.pending).length) {
+        window.localStorage.setItem(PENDING_KEY, JSON.stringify(sync.pending));
+      } else {
+        window.localStorage.removeItem(PENDING_KEY);
+      }
+    } catch {
+      /* sin persistencia: el árbol sigue en memoria */
+    }
+  }
+
+  function renderSyncStatus() {
+    if (!sync || !els.syncStatus) return;
+    const labels = {
+      local: "Guardado en este navegador",
+      connecting: "Conectando…",
+      online: "Sincronizado",
+      saving: "Guardando cambios…",
+      offline: "Sin conexión · se reintentará",
+      waiting: "Esperando árbol compartido…",
+    };
+    const text = labels[sync.state] || labels.local;
+    const label = els.syncStatus.querySelector(".sync-text");
+    if (label) label.textContent = text;
+    els.syncStatus.dataset.state = sync.state;
+    els.syncStatus.title = sync.enabled
+      ? sync.lastAt
+        ? `Última sincronización: ${new Date(sync.lastAt).toLocaleTimeString()}`
+        : "Sincronización activa"
+      : "Los datos se guardan solo en este dispositivo";
+  }
+
+  function setSyncState(state) {
+    if (!sync) return;
+    sync.state = state;
+    renderSyncStatus();
+  }
+
+  function scheduleSyncRetry(handler) {
+    if (!sync || sync.retryTimer) return;
+    const delay = sync.retryDelay;
+    sync.retryDelay = Math.min(Math.round(sync.retryDelay * 1.7), 60000);
+    sync.retryTimer = window.setTimeout(() => {
+      if (!sync) return;
+      sync.retryTimer = null;
+      handler();
+    }, delay);
+  }
+
+  function queueSync() {
+    if (!sync || !sync.enabled || !sync.ready) return;
+    if (sync.blockWrites && isDemoWorkspace()) return;
+    if (sync.blockWrites) sync.blockWrites = false;
+
+    const patch = diffRemote(sync.remote, localSnapshot());
+    if (!Object.keys(patch).length) return;
+    Object.assign(sync.pending, patch);
+    writePending();
+    setSyncState("saving");
+
+    if (sync.sendTimer) window.clearTimeout(sync.sendTimer);
+    sync.sendTimer = window.setTimeout(() => {
+      if (!sync) return;
+      sync.sendTimer = null;
+      flushSync();
+    }, 700);
+  }
+
+  async function flushSync({ keepalive = false } = {}) {
+    if (!sync || !sync.enabled || !sync.ready) return;
+    if (sync.sendTimer) {
+      window.clearTimeout(sync.sendTimer);
+      sync.sendTimer = null;
+    }
+    if (!Object.keys(sync.pending).length) {
+      if (sync.state === "saving") setSyncState("online");
+      return;
+    }
+    if (sync.sending) return;
+    await sendPending({ keepalive });
+  }
+
+  async function sendPending({ keepalive = false } = {}) {
+    if (!sync || !sync.enabled || !sync.ready) return;
+    const sent = { ...sync.pending };
+    if (!Object.keys(sent).length) return;
+
+    const revision = sync.version;
+    sync.sending = true;
+    setSyncState("saving");
+
+    try {
+      const response = await fetch(`${SYNC_URL}/${SYNC_PATH}.json`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sent),
+        keepalive,
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      Object.keys(sent).forEach((key) => {
+        if (stable(sync.pending[key]) === stable(sent[key])) delete sync.pending[key];
+      });
+      writePending();
+      if (sync.version === revision) applyPatch(sync.remote, sent);
+      sync.lastAt = Date.now();
+      sync.retryDelay = 4000;
+      sync.sending = false;
+      renderSyncStatus();
+
+      if (Object.keys(sync.pending).length) {
+        sync.sendTimer = window.setTimeout(() => {
+          if (!sync) return;
+          sync.sendTimer = null;
+          flushSync();
+        }, 200);
+      } else {
+        setSyncState("online");
+      }
+    } catch (error) {
+      sync.sending = false;
+      writePending();
+      setSyncState("offline");
+      scheduleSyncRetry(() => flushSync());
+    }
+  }
+
+  function parseStreamEvent(raw) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  function markSyncAlive() {
+    if (!sync) return;
+    if (Object.keys(sync.pending).length) setSyncState("saving");
+    else setSyncState("online");
+  }
+
+  function handleStreamPut(payload) {
+    if (!sync || !payload || typeof payload !== "object") return;
+    sync.version += 1;
+    const path = String(payload.path || "/").replace(/\/+$/, "") || "/";
+    if (path === "/") {
+      if (payload.data == null) {
+        if (!sync.ready) return;
+        const hadData =
+          (sync.remote.sections && sync.remote.sections.length) ||
+          Object.keys(sync.remote.people || {}).length ||
+          Object.keys(sync.remote.relations || {}).length;
+        if (!hadData) return;
+        sync.blockWrites = false;
+        applyRemoteSnapshot(emptyRemote());
+        markSyncAlive();
+      } else {
+        sync.blockWrites = false;
+        applyRemoteSnapshot(normalizeRemote(payload.data));
+        markSyncAlive();
+      }
+      return;
+    }
+    const next = sync.remote || emptyRemote();
+    setRemotePath(next, path.slice(1), payload.data === undefined ? null : payload.data);
+    applyRemoteSnapshot(next);
+    markSyncAlive();
+  }
+
+  function handleStreamPatch(payload) {
+    if (!sync || !payload || typeof payload !== "object" || !payload.data) return;
+    sync.version += 1;
+    const base = String(payload.path || "/")
+      .replace(/^\//, "")
+      .replace(/\/+$/, "");
+    const next = sync.remote || emptyRemote();
+    Object.entries(payload.data).forEach(([relative, value]) => {
+      setRemotePath(next, base ? `${base}/${relative}` : relative, value);
+    });
+    applyRemoteSnapshot(next);
+    markSyncAlive();
+  }
+
+  function armStreamWatchdog(source) {
+    if (!sync) return;
+    if (sync.watchdog) window.clearTimeout(sync.watchdog);
+    sync.watchdog = window.setTimeout(() => {
+      if (!sync || sync.source !== source) return;
+      if (source.readyState === 1) return;
+      try {
+        source.close();
+      } catch {
+        /* ya cerrado */
+      }
+      sync.source = null;
+      connectSyncStream();
+      loadRemote();
+    }, 9000);
+  }
+
+  function connectSyncStream() {
+    if (!sync || !sync.enabled) return;
+    if (!("EventSource" in window)) return;
+    if (sync.watchdog) {
+      window.clearTimeout(sync.watchdog);
+      sync.watchdog = null;
+    }
+    if (sync.source) {
+      try {
+        sync.source.close();
+      } catch {
+        /* nada que cerrar */
+      }
+    }
+
+    let source;
+    try {
+      source = new EventSource(`${SYNC_URL}/${SYNC_PATH}.json`);
+    } catch {
+      scheduleSyncRetry(connectSyncStream);
+      return;
+    }
+    sync.source = source;
+
+    source.addEventListener("open", () => {
+      if (!sync) return;
+      if (sync.watchdog) {
+        window.clearTimeout(sync.watchdog);
+        sync.watchdog = null;
+      }
+      if (sync.blockWrites) {
+        setSyncState("waiting");
+      } else if (Object.keys(sync.pending).length) {
+        setSyncState("saving");
+        flushSync();
+      } else {
+        setSyncState("online");
+      }
+    });
+    source.addEventListener("put", (event) => {
+      const payload = parseStreamEvent(event.data);
+      if (payload) handleStreamPut(payload);
+    });
+    source.addEventListener("patch", (event) => {
+      const payload = parseStreamEvent(event.data);
+      if (payload) handleStreamPatch(payload);
+    });
+    source.addEventListener("keep-alive", () => {});
+    source.addEventListener("cancel", () => {
+      if (!sync) return;
+      try {
+        source.close();
+      } catch {
+        /* ya cerrado */
+      }
+      sync.source = null;
+      setSyncState("offline");
+      scheduleSyncRetry(() => {
+        connectSyncStream();
+        loadRemote();
+      });
+    });
+    source.addEventListener("error", () => {
+      if (!sync) return;
+      if (sync.state !== "offline") setSyncState("offline");
+      armStreamWatchdog(source);
+    });
+  }
+
+  function canSeedRemote() {
+    return !isDemoWorkspace() && (data.people.length > 0 || data.sections.length > 0);
+  }
+
+  async function loadRemote() {
+    if (!sync || !sync.enabled) return;
+    try {
+      const response = await fetch(`${SYNC_URL}/${SYNC_PATH}.json`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const raw = await response.json();
+
+      if (raw == null) {
+        sync.remote = emptyRemote();
+        sync.ready = true;
+        if (Object.keys(sync.pending).length) {
+          flushSync();
+        } else if (canSeedRemote()) {
+          queueSync();
+        } else {
+          sync.blockWrites = true;
+          setSyncState("waiting");
+        }
+        return;
+      }
+
+      const remote = normalizeRemote(raw);
+      if (Object.keys(sync.pending).length) applyPatch(remote, sync.pending);
+      sync.ready = true;
+      sync.blockWrites = false;
+      applyRemoteSnapshot(remote, { initial: true });
+      setSyncState("online");
+      if (Object.keys(sync.pending).length) flushSync();
+    } catch {
+      setSyncState("offline");
+      scheduleSyncRetry(loadRemote);
+    }
+  }
+
+  function startSync() {
+    sync = {
+      enabled: Boolean(SYNC_URL),
+      ready: false,
+      blockWrites: false,
+      state: "local",
+      remote: emptyRemote(),
+      pending: readPending(),
+      source: null,
+      sending: false,
+      sendTimer: null,
+      retryTimer: null,
+      retryDelay: 4000,
+      deferTimer: null,
+      deferred: null,
+      watchdog: null,
+      version: 0,
+      lastAt: 0,
+    };
+    renderSyncStatus();
+    if (!sync.enabled) return;
+
+    setSyncState(Object.keys(sync.pending).length ? "saving" : "connecting");
+    connectSyncStream();
+    loadRemote();
+
+    window.addEventListener("pagehide", () => {
+      if (!sync || !sync.enabled) return;
+      if (Object.keys(sync.pending).length) sendPending({ keepalive: true });
+    });
   }
 
   function cacheDom() {
@@ -439,6 +999,7 @@
       addSectionBtn: $("addSectionBtn"),
       sectionList: $("sectionList"),
       openHelpLink: $("openHelpLink"),
+      syncStatus: $("syncStatus"),
       canvasArea: $("canvasArea"),
       viewport: $("viewport"),
       world: $("world"),
@@ -506,6 +1067,7 @@
       helpLegend: $("helpLegend"),
       helpExportBtn: $("helpExportBtn"),
       helpImportBtn: $("helpImportBtn"),
+      helpShareBtn: $("helpShareBtn"),
       helpDemoBtn: $("helpDemoBtn"),
       helpResetBtn: $("helpResetBtn"),
       confirmDialog: $("confirmDialog"),
@@ -2198,6 +2760,34 @@
     }, 3400);
   }
 
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await Promise.race([
+          navigator.clipboard.writeText(text),
+          new Promise((_, reject) => window.setTimeout(() => reject(new Error("timeout")), 1200)),
+        ]);
+        return true;
+      } catch {
+        /* probamos el método clásico */
+      }
+    }
+    try {
+      const area = document.createElement("textarea");
+      area.value = text;
+      area.setAttribute("readonly", "");
+      area.style.position = "fixed";
+      area.style.opacity = "0";
+      document.body.appendChild(area);
+      area.select();
+      const copied = document.execCommand("copy");
+      area.remove();
+      return copied;
+    } catch {
+      return false;
+    }
+  }
+
   function openDialog(dialog) {
     if (!dialog || dialog.open) return;
     dialog.showModal();
@@ -3113,6 +3703,15 @@
 
     els.helpBtn.addEventListener("click", openHelp);
     els.openHelpLink.addEventListener("click", openHelp);
+    els.helpShareBtn.addEventListener("click", async () => {
+      const url = window.location.href.split("#")[0];
+      const copied = await copyText(url);
+      if (copied) {
+        toast("Enlace copiado. Compártelo con quien quieras editar el árbol.", "success");
+      } else {
+        window.prompt("Copia este enlace para compartir el árbol:", url);
+      }
+    });
     els.helpDemoBtn.addEventListener("click", loadDemo);
     els.helpResetBtn.addEventListener("click", clearAll);
 
@@ -3432,6 +4031,8 @@
         }, 700);
       }
     });
+
+    startSync();
   }
 
   init();
