@@ -29,12 +29,13 @@
       } catch {}
     })();
   </script>
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="preload" href="fonts/fredoka-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body>
   <div class="app" id="app">
     <header class="topbar">
-      <button class="btn btn-icon menu-btn" id="menuBtn" aria-label="Abrir panel de personajes" title="Personajes">
+      <button class="btn btn-icon menu-btn" id="menuBtn" aria-label="Abrir panel de grupos y personajes" title="Grupos y personajes">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
       </button>
 
@@ -80,8 +81,19 @@
     </header>
 
     <main class="layout">
-      <aside class="sidebar" id="sidebar" aria-label="Personajes y secciones">
+      <aside class="sidebar" id="sidebar" aria-label="Grupos de familia y personajes">
         <div class="side-scroll">
+          <section class="side-block side-sections">
+            <div class="side-head">
+              <h2>Grupos de familia <span class="count-pill" id="groupsCount">0</span></h2>
+              <button class="mini-btn" id="addGroupBtn" title="Crear grupo de familia" aria-label="Crear grupo de familia">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+            </div>
+            <p class="side-note" id="activeGroupLabel">Sin grupo activo</p>
+            <div id="groupList" class="section-list"></div>
+          </section>
+
           <section class="side-block">
             <div class="side-head">
               <h2>Personajes <span class="count-pill" id="peopleCount">0</span></h2>
@@ -91,16 +103,6 @@
               <input id="searchInput" type="search" placeholder="Buscar personaje…" autocomplete="off" aria-label="Buscar personaje">
             </label>
             <div id="peopleList" class="people-list"></div>
-          </section>
-
-          <section class="side-block side-sections">
-            <div class="side-head">
-              <h2>Secciones</h2>
-              <button class="mini-btn" id="addSectionBtn" title="Crear sección" aria-label="Crear sección">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-              </button>
-            </div>
-            <div id="sectionList" class="section-list"></div>
           </section>
         </div>
 
@@ -140,8 +142,6 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h6"/><path d="m17 10 3 2-3 2"/></svg>
             <span>Organizar</span>
           </button>
-          <div class="tool-sep" aria-hidden="true"></div>
-          <div id="filterChip" class="filter-chip hidden"></div>
         </div>
 
         <div id="focusBar" class="focus-bar hidden" role="status">
@@ -249,8 +249,9 @@
           </details>
         </div>
         <div class="field">
-          <label for="personSection">Sección</label>
-          <select id="personSection" name="section"></select>
+          <label for="personGroup">Grupo de familia</label>
+          <select id="personGroup" name="group"></select>
+          <span class="field-help">Cada grupo es un árbol independiente: los vínculos solo conectan personajes del mismo grupo.</span>
         </div>
         <div class="field">
           <label for="personDesc">Descripción</label>
@@ -335,36 +336,37 @@
     </div>
   </dialog>
 
-  <!-- Sección -->
-  <dialog class="modal modal-small" id="sectionDialog" aria-labelledby="sectionDialogTitle">
-    <form id="sectionForm" novalidate>
+  <!-- Grupo de familia -->
+  <dialog class="modal modal-small" id="groupDialog" aria-labelledby="groupDialogTitle">
+    <form id="groupForm" novalidate>
       <div class="modal-head">
         <div>
-          <span class="eyebrow">Organiza tu wiki</span>
-          <h2 id="sectionDialogTitle">Nueva sección</h2>
+          <span class="eyebrow">Organiza tus árboles</span>
+          <h2 id="groupDialogTitle">Nuevo grupo de familia</h2>
         </div>
-        <button type="button" class="icon-close" data-close-dialog="sectionDialog" aria-label="Cerrar">
+        <button type="button" class="icon-close" data-close-dialog="groupDialog" aria-label="Cerrar">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
         </button>
       </div>
       <div class="modal-body">
         <div class="field">
-          <label for="sectionName">Nombre <span class="req">*</span></label>
-          <input id="sectionName" maxlength="50" placeholder="Ej. Familia, Amistades…" required autocomplete="off">
+          <label for="groupName">Nombre <span class="req">*</span></label>
+          <input id="groupName" maxlength="50" placeholder="Ej. Familia Kelly, Vecinos…" required autocomplete="off">
+          <span class="field-help">Cada grupo guarda su propio árbol de personajes y vínculos.</span>
         </div>
         <div class="field">
           <label>Color</label>
-          <div class="swatches" id="sectionColors"></div>
+          <div class="swatches" id="groupColors"></div>
         </div>
       </div>
       <div class="modal-foot">
-        <button type="button" class="btn btn-danger hidden" id="sectionDeleteBtn">
+        <button type="button" class="btn btn-danger hidden" id="groupDeleteBtn">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6.5 7l.8 13h9.4l.8-13M10 11v5M14 11v5"/></svg>
-          Eliminar sección
+          Eliminar grupo
         </button>
         <span class="spacer"></span>
-        <button type="button" class="btn" data-close-dialog="sectionDialog">Cancelar</button>
-        <button type="submit" class="btn btn-primary">Guardar sección</button>
+        <button type="button" class="btn" data-close-dialog="groupDialog">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar grupo</button>
       </div>
     </form>
   </dialog>
@@ -382,10 +384,11 @@
     </div>
     <div class="modal-body">
       <ol class="help-steps">
-        <li><strong>Crea personajes.</strong> La foto es la protagonista de cada tarjeta; debajo aparecen el nombre y su sección. Sube una imagen y ajusta el encuadre antes de guardarla. Añade una descripción libre para completar su ficha.</li>
+        <li><strong>Organiza grupos de familia.</strong> Cada grupo es un árbol independiente con sus propios personajes y vínculos. Crea tantos como familias, barrios o historias necesites y cambia entre ellos desde el panel lateral.</li>
+        <li><strong>Crea personajes.</strong> La foto es la protagonista de cada tarjeta; debajo aparecen el nombre y su grupo. Sube una imagen y ajusta el encuadre antes de guardarla. Añade una descripción libre para completar su ficha.</li>
         <li><strong>Ordénalos en el lienzo.</strong> Arrastra cada tarjeta o pulsa <em>Organizar</em> para alinear el árbol por generaciones. Las líneas se redibujan como en un árbol genealógico.</li>
         <li><strong>Teje vínculos.</strong> Pulsa <em>Vincular</em>, elige dos personas y define la relación. Parejas, hijos, sangre y familia usan trazados familiares; amistades y conocidos se muestran como vínculos sociales.</li>
-        <li><strong>Reduce el ruido.</strong> En <em>Familia</em> solo verás la estructura genealógica. Cambia a <em>Todo</em> para ver amistades y conocidos, o abre el árbol propio de un contacto desde su ficha.</li>
+        <li><strong>Descubre sus contactos.</strong> En <em>Familia</em> solo verás la estructura genealógica. Pasa el cursor sobre una tarjeta para ver al instante sus amistades y conocidos, o ábrela para consultarlos en su ficha. Cambia a <em>Todo</em> para verlos como vínculos en el lienzo.</li>
         <li><strong>Amplía el lienzo.</strong> Retrae los paneles laterales con los botones de la barra superior. El tema sigue automáticamente al dispositivo, y puedes alternar claro/oscuro con el botón del sol.</li>
       </ol>
 
@@ -451,6 +454,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
