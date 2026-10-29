@@ -87,10 +87,12 @@
   const REL_BY_ID = Object.fromEntries(REL_TYPES.map((r) => [r.id, r]));
   const FAMILY_TYPES = new Set(["pareja", "hijo", "sangre", "familia"]);
 
-  const SECTION_COLORS = [
+  const GROUP_COLORS = [
     "#f472b6", "#fb923c", "#fbbf24", "#a3e635", "#34d399",
     "#22d3ee", "#60a5fa", "#a78bfa", "#f87171", "#94a3b8",
   ];
+  const DEFAULT_GROUP_ID = "grp_principal";
+  const DEFAULT_GROUP_NAME = "Mi árbol";
 
   const ICONS = {
     edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
@@ -135,8 +137,26 @@
     return `${n} ${n === 1 ? singular : pluralWord}`;
   }
 
-  function sectionById(id) {
-    return data.sections.find((s) => s.id === id) || null;
+  function groupById(id) {
+    return data.groups.find((group) => group.id === id) || null;
+  }
+
+  function activeGroup() {
+    return groupById(ui.activeGroupId) || data.groups[0] || null;
+  }
+
+  function activeGroupId() {
+    const group = activeGroup();
+    return group ? group.id : null;
+  }
+
+  function peopleInGroup(groupId) {
+    return data.people.filter((person) => person.groupId === groupId);
+  }
+
+  function relationsInGroup(groupId) {
+    const ids = new Set(peopleInGroup(groupId).map((person) => person.id));
+    return data.relations.filter((relation) => ids.has(relation.from) && ids.has(relation.to));
   }
 
   function personById(id) {
@@ -144,8 +164,25 @@
   }
 
   function colorOf(person) {
-    const section = person ? sectionById(person.sectionId) : null;
-    return section ? section.color : "#94a3b8";
+    const group = person ? groupById(person.groupId) : null;
+    return group ? group.color : "#94a3b8";
+  }
+
+  function rememberGroupView() {
+    const current = activeGroupId();
+    if (current) groupViews[current] = { ...view };
+  }
+
+  function ensureGroup() {
+    if (!data.groups.length) {
+      data.groups.push({
+        id: DEFAULT_GROUP_ID,
+        name: DEFAULT_GROUP_NAME,
+        color: GROUP_COLORS[0],
+      });
+    }
+    if (!groupById(ui.activeGroupId)) ui.activeGroupId = data.groups[0].id;
+    return activeGroup();
   }
 
   function hexToRgba(hex, alpha) {
@@ -206,8 +243,9 @@
   }
 
   /* ---------------- Estado ---------------- */
-  let data = { sections: [], people: [], relations: [] };
+  let data = { groups: [], people: [], relations: [] };
   let view = { x: 0, y: 0, k: 1 };
+  let groupViews = {};
   let saveTimer = null;
   let storageWarned = false;
   let themeMode = "auto";
@@ -218,7 +256,7 @@
   const ui = {
     selectedId: null,
     query: "",
-    sectionFilter: null,
+    activeGroupId: null,
     viewMode: "family",
     focusRootId: null,
     connect: { active: false, fromId: null, pointer: null },
@@ -230,23 +268,26 @@
     personPlacement: null,
     avatarDraft: "",
     relationCtx: null,
-    sectionEditId: null,
-    sectionColor: SECTION_COLORS[0],
+    groupEditId: null,
+    groupColor: GROUP_COLORS[0],
     pointerRaf: null,
+    hoverTimer: null,
+    hoverCard: null,
+    hoverNode: null,
+    hoverPersonId: null,
   };
 
   /* ---------------- Datos de ejemplo ---------------- */
   function demoData() {
     return {
-      sections: [
-        { id: "sec_familia", name: "Familia", color: "#34d399" },
-        { id: "sec_amistades", name: "Amistades", color: "#a78bfa" },
+      groups: [
+        { id: "grp_familia", name: "Familia", color: "#34d399" },
       ],
       people: [
         {
           id: "p_kelly",
           name: "Kelly",
-          sectionId: "sec_familia",
+          groupId: "grp_familia",
           avatar: "",
           x: 520, y: 120,
           description: "El centro de esta familia. Le gusta reunir a todos alrededor de la mesa, contar historias que crecen cada vez que las repite y asegurarse de que nadie se vaya sin probar el postre.",
@@ -254,7 +295,7 @@
         {
           id: "p_bard",
           name: "Bard",
-          sectionId: "sec_familia",
+          groupId: "grp_familia",
           avatar: "",
           x: 760, y: 120,
           description: "Pareja de Kelly y padre de sus tres hijas. De carácter tranquilo, es quien pone orden cuando la casa se llena de voces y quien recuerda los cumpleaños que todos los demás olvidan.",
@@ -262,7 +303,7 @@
         {
           id: "p_manu",
           name: "Manu",
-          sectionId: "sec_amistades",
+          groupId: "grp_familia",
           avatar: "",
           x: 260, y: 120,
           description: "Amiga de Kelly desde hace muchos años. Se conocieron por casualidad y desde entonces no han dejado de buscarse: una llamada suya basta para convertir una tarde cualquiera en un plan memorable.",
@@ -270,7 +311,7 @@
         {
           id: "p_yana",
           name: "Yana",
-          sectionId: "sec_familia",
+          groupId: "grp_familia",
           avatar: "",
           x: 400, y: 430,
           description: "La mayor de las tres hermanas. Curiosa, decidida y con una facilidad sorprendente para organizar a todo el mundo. Suele ser la primera en proponer una aventura y la última en rendirse.",
@@ -278,7 +319,7 @@
         {
           id: "p_asya",
           name: "Asya",
-          sectionId: "sec_familia",
+          groupId: "grp_familia",
           avatar: "",
           x: 640, y: 430,
           description: "La mediana. Observadora y creativa, prefiere escuchar antes que hablar y tiene un cuaderno lleno de ideas que algún día piensa llevar a cabo. Es el punto de equilibrio entre sus hermanas.",
@@ -286,7 +327,7 @@
         {
           id: "p_lila",
           name: "Lila",
-          sectionId: "sec_familia",
+          groupId: "grp_familia",
           avatar: "",
           x: 880, y: 430,
           description: "La pequeña de la casa. Alegre, impulsiva y experta en convertir cualquier día gris en una pequeña celebración. Sus hermanas dicen que heredó la energía de Kelly y la calma de Bard.",
@@ -294,7 +335,7 @@
         {
           id: "p_sasha",
           name: "Sasha",
-          sectionId: "sec_amistades",
+          groupId: "grp_familia",
           avatar: "",
           x: 120, y: 430,
           description: "Amiga de Yana. Se entienden con una mirada y comparten la misma debilidad por los planes improvisados. Es la voz que anima a Yana cuando duda y su cómplice favorita cuando la idea vale la pena.",
@@ -316,23 +357,47 @@
 
   /* ---------------- Almacenamiento ---------------- */
   function sanitize(raw) {
-    const out = { sections: [], people: [], relations: [] };
-    if (!raw || typeof raw !== "object") return out;
+    const out = { groups: [], people: [], relations: [] };
+    if (!raw || typeof raw !== "object") {
+      out.groups.push({ id: DEFAULT_GROUP_ID, name: DEFAULT_GROUP_NAME, color: GROUP_COLORS[0] });
+      return out;
+    }
 
-    const seenSections = new Set();
-    const rawSections = Array.isArray(raw.sections) ? raw.sections : [];
-    rawSections.forEach((s) => {
-      if (!s || s.id == null || !String(s.name || "").trim()) return;
-      const id = String(s.id);
-      if (seenSections.has(id)) return;
-      out.sections.push({
+    const seenGroups = new Set();
+    const rawGroups = Array.isArray(raw.groups)
+      ? raw.groups.map((group) => [null, group])
+      : raw.groups && typeof raw.groups === "object"
+        ? Object.entries(raw.groups)
+        : [];
+    rawGroups.forEach(([key, group], index) => {
+      if (!group || typeof group !== "object" || !String(group.name || "").trim()) return;
+      const id = String(group.id != null ? group.id : key || `grp_${index + 1}`);
+      if (!id || seenGroups.has(id)) return;
+      out.groups.push({
         id,
-        name: String(s.name).trim().slice(0, 80),
-        color: /^#[0-9a-f]{6}$/i.test(String(s.color || "")) ? s.color : SECTION_COLORS[0],
+        name: String(group.name).trim().slice(0, 80),
+        color: /^#[0-9a-f]{6}$/i.test(String(group.color || ""))
+          ? String(group.color)
+          : GROUP_COLORS[index % GROUP_COLORS.length],
       });
-      seenSections.add(id);
+      seenGroups.add(id);
     });
 
+    if (!out.groups.length) {
+      const legacySections = Array.isArray(raw.sections) ? raw.sections : [];
+      const family = legacySections.find((section) => section && /familia/i.test(String(section.name || "")));
+      out.groups.push({
+        id: DEFAULT_GROUP_ID,
+        name: family && String(family.name || "").trim()
+          ? String(family.name).trim().slice(0, 80)
+          : DEFAULT_GROUP_NAME,
+        color: family && /^#[0-9a-f]{6}$/i.test(String(family.color || ""))
+          ? String(family.color)
+          : GROUP_COLORS[0],
+      });
+    }
+
+    const fallbackGroupId = out.groups[0].id;
     const seenPeople = new Set();
     const rawPeople = Array.isArray(raw.people) ? raw.people : [];
     rawPeople.forEach((p, index) => {
@@ -343,11 +408,17 @@
       const hasY = p.y != null && Number.isFinite(Number(p.y));
       const fallbackX = 140 + (index % 4) * 270;
       const fallbackY = 140 + Math.floor(index / 4) * 160;
+      let groupId = p.groupId != null ? String(p.groupId) : "";
+      if (!seenGroups.has(groupId)) {
+        groupId = p.sectionId != null && seenGroups.has(String(p.sectionId))
+          ? String(p.sectionId)
+          : fallbackGroupId;
+      }
       out.people.push({
         id,
         name: String(p.name).trim().slice(0, 80),
         description: typeof p.description === "string" ? p.description.slice(0, 2000) : "",
-        sectionId: seenSections.has(String(p.sectionId)) ? String(p.sectionId) : null,
+        groupId,
         avatar: isSafeImageUrl(p.avatar) ? String(p.avatar).trim() : "",
         x: hasX ? clamp(Number(p.x), 24, WORLD_W - NODE_W - 24) : fallbackX,
         y: hasY ? clamp(Number(p.y), 24, WORLD_H - NODE_H - 24) : fallbackY,
@@ -355,6 +426,7 @@
       seenPeople.add(id);
     });
 
+    const groupOfPerson = new Map(out.people.map((person) => [person.id, person.groupId]));
     const seenRelations = new Set();
     const seenRelationIds = new Set();
     const rawRelations = Array.isArray(raw.relations) ? raw.relations : [];
@@ -364,6 +436,7 @@
       const to = String(r.to);
       if (!seenPeople.has(from) || !seenPeople.has(to) || from === to) return;
       if (!REL_BY_ID[r.type]) return;
+      if (groupOfPerson.get(from) !== groupOfPerson.get(to)) return;
       const key = [from, to].sort().join("|");
       if (seenRelations.has(key)) return;
       let id = r.id != null ? String(r.id) : uid("r");
@@ -388,9 +461,19 @@
         /* sin persistencia: seguimos con los datos en memoria */
       }
       const parsed = JSON.parse(raw);
+      const legacy =
+        !Array.isArray(parsed.groups) ||
+        Number(parsed.version || 1) < 2 ||
+        (Array.isArray(parsed.people) &&
+          parsed.people.some((person) => person && person.groupId == null));
       return {
         data: sanitize(parsed),
         view: parsed && parsed.view ? normalizeView(parsed.view) : null,
+        activeGroupId: parsed && parsed.activeGroupId != null ? String(parsed.activeGroupId) : null,
+        groupViews: parsed && parsed.groupViews && typeof parsed.groupViews === "object"
+          ? parsed.groupViews
+          : {},
+        legacy,
       };
     } catch (error) {
       console.warn("Nradiowave: no se pudo leer el almacenamiento local.", error);
@@ -403,12 +486,16 @@
       clearTimeout(saveTimer);
       saveTimer = null;
     }
+    const currentGroupId = activeGroupId();
+    if (currentGroupId) groupViews[currentGroupId] = { ...view };
     const payload = {
       app: "nradiowave-rw",
-      version: 1,
+      version: 2,
       savedAt: new Date().toISOString(),
       view,
-      sections: data.sections,
+      activeGroupId: currentGroupId,
+      groupViews,
+      groups: data.groups,
       people: data.people,
       relations: data.relations,
     };
@@ -438,7 +525,7 @@
      enlace puede editar. Cada cambio se envía por rutas concretas
      (PATCH) para no reenviar las fotos de todo el árbol. */
   function emptyRemote() {
-    return { sections: [], people: {}, relations: {} };
+    return { groups: [], people: {}, relations: {} };
   }
 
   function syncKeyMap(items) {
@@ -459,7 +546,7 @@
 
   function localSnapshot() {
     return {
-      sections: data.sections.map((section) => ({ ...section })),
+      groups: data.groups.map((group) => ({ ...group })),
       people: syncKeyMap(data.people),
       relations: syncKeyMap(data.relations),
     };
@@ -469,15 +556,16 @@
     const out = emptyRemote();
     if (!raw || typeof raw !== "object") return out;
 
-    const rawSections = Array.isArray(raw.sections)
-      ? raw.sections
-      : raw.sections && typeof raw.sections === "object"
-        ? Object.keys(raw.sections)
-            .sort((a, b) => Number(a) - Number(b))
-            .map((key) => raw.sections[key])
+    const rawGroups = Array.isArray(raw.groups)
+      ? raw.groups.map((group) => [null, group])
+      : raw.groups && typeof raw.groups === "object"
+        ? Object.entries(raw.groups)
         : [];
-    rawSections.forEach((section) => {
-      if (section && typeof section === "object") out.sections.push({ ...section });
+    rawGroups.forEach(([key, group], index) => {
+      if (!group || typeof group !== "object") return;
+      const id = String(group.id != null ? group.id : key || `grp_${index + 1}`);
+      if (!id) return;
+      out.groups.push({ ...group, id });
     });
 
     const collect = (source, target) => {
@@ -489,6 +577,42 @@
     };
     collect(raw.people, out.people);
     collect(raw.relations, out.relations);
+
+    if (!out.groups.length) {
+      const legacySections = Array.isArray(raw.sections)
+        ? raw.sections
+        : raw.sections && typeof raw.sections === "object"
+          ? Object.values(raw.sections)
+          : [];
+      const family = legacySections.find((section) => section && /familia/i.test(String(section.name || "")));
+      if (Object.keys(out.people).length || legacySections.length) {
+        out.groups.push({
+          id: DEFAULT_GROUP_ID,
+          name: family && String(family.name || "").trim()
+            ? String(family.name).trim().slice(0, 80)
+            : DEFAULT_GROUP_NAME,
+          color: family && /^#[0-9a-f]{6}$/i.test(String(family.color || ""))
+            ? String(family.color)
+            : GROUP_COLORS[0],
+        });
+        Object.defineProperty(out, "legacy", { value: true, configurable: true });
+      }
+    }
+
+    const fallbackGroupId = out.groups[0] ? out.groups[0].id : null;
+    const groupIds = new Set(out.groups.map((group) => group.id));
+    const missingGroupIds = [];
+    Object.entries(out.people).forEach(([key, person]) => {
+      const hadGroup = person.groupId != null && groupIds.has(String(person.groupId));
+      let groupId = person.groupId != null ? String(person.groupId) : "";
+      if (!groupIds.has(groupId)) groupId = fallbackGroupId;
+      if (groupId) person.groupId = groupId;
+      if (!hadGroup) missingGroupIds.push(key);
+    });
+    Object.defineProperty(out, "missingGroupIds", {
+      value: missingGroupIds,
+      configurable: true,
+    });
     return out;
   }
 
@@ -501,7 +625,7 @@
       ...relation,
       id: relation && relation.id != null ? relation.id : key,
     }));
-    return sanitize({ sections: remote.sections, people, relations });
+    return sanitize({ groups: remote.groups, people, relations });
   }
 
   function stable(value) {
@@ -515,8 +639,8 @@
 
   function diffRemote(prev, next) {
     const patch = {};
-    if (stable(prev.sections) !== stable(next.sections)) {
-      patch.sections = next.sections;
+    if (stable(prev.groups) !== stable(next.groups)) {
+      patch.groups = next.groups;
     }
     Object.entries(next.people).forEach(([key, person]) => {
       if (stable(prev.people[key]) !== stable(person)) patch[`people/${key}`] = person;
@@ -540,11 +664,11 @@
     if (!parts.length) {
       if (value && typeof value === "object") {
         const normalized = normalizeRemote(value);
-        remote.sections = normalized.sections;
+        remote.groups = normalized.groups;
         remote.people = normalized.people;
         remote.relations = normalized.relations;
       } else {
-        remote.sections = [];
+        remote.groups = [];
         remote.people = {};
         remote.relations = {};
       }
@@ -586,7 +710,7 @@
     sync.remote = remote;
 
     const effective = {
-      sections: remote.sections.slice(),
+      groups: remote.groups.slice(),
       people: { ...remote.people },
       relations: { ...remote.relations },
     };
@@ -597,15 +721,21 @@
     const changed = stable(next) !== stable(data);
     if (changed) {
       data = next;
-      if (ui.selectedId && !data.people.some((person) => person.id === ui.selectedId)) {
+      if (!data.groups.some((group) => group.id === ui.activeGroupId)) {
+        ui.activeGroupId = data.groups[0] ? data.groups[0].id : null;
+      }
+      const active = activeGroup();
+      const selected = ui.selectedId ? personById(ui.selectedId) : null;
+      if (!selected || !active || selected.groupId !== active.id) {
         ui.selectedId = null;
       }
-      if (ui.focusRootId && !data.people.some((person) => person.id === ui.focusRootId)) {
+      const focused = ui.focusRootId ? personById(ui.focusRootId) : null;
+      if (!focused || !active || focused.groupId !== active.id) {
         ui.focusRootId = null;
       }
-      if (ui.sectionFilter && !data.sections.some((section) => section.id === ui.sectionFilter)) {
-        ui.sectionFilter = null;
-      }
+      Object.keys(groupViews).forEach((groupId) => {
+        if (!data.groups.some((group) => group.id === groupId)) delete groupViews[groupId];
+      });
       renderAll();
       saveData({ fromRemote: true });
     }
@@ -633,7 +763,21 @@
   function readPending() {
     try {
       const raw = JSON.parse(readStored(PENDING_KEY) || "{}");
-      return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+      const legacy = Object.prototype.hasOwnProperty.call(raw, "sections") ||
+        Object.entries(raw).some(([key, value]) =>
+          /^people\//.test(key) && value && typeof value === "object" && !value.groupId
+        );
+      if (legacy) {
+        console.warn("Nradiowave: se descartan cambios pendientes del formato anterior.");
+        try {
+          window.localStorage.removeItem(PENDING_KEY);
+        } catch {
+          /* sin persistencia */
+        }
+        return {};
+      }
+      return raw;
     } catch {
       return {};
     }
@@ -695,7 +839,19 @@
     if (sync.blockWrites && isDemoWorkspace()) return;
     if (sync.blockWrites) sync.blockWrites = false;
 
-    const patch = diffRemote(sync.remote, localSnapshot());
+    const snapshot = localSnapshot();
+    const patch = diffRemote(sync.remote, snapshot);
+    if (sync.legacyRemote) {
+      patch.groups = data.groups.map((group) => ({ ...group }));
+      patch.sections = null;
+      sync.legacyRemote = false;
+    }
+    if (sync.missingGroupIds.length) {
+      sync.missingGroupIds.forEach((key) => {
+        if (snapshot.people[key]) patch[`people/${key}`] = snapshot.people[key];
+      });
+      sync.missingGroupIds = [];
+    }
     if (!Object.keys(patch).length) return;
     Object.assign(sync.pending, patch);
     writePending();
@@ -732,6 +888,10 @@
     sync.sending = true;
     setSyncState("saving");
 
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const timeout = controller
+      ? window.setTimeout(() => controller.abort(), 15000)
+      : null;
     try {
       const response = await fetch(`${SYNC_URL}/${SYNC_PATH}.json`, {
         method: "PATCH",
@@ -739,7 +899,9 @@
         body: JSON.stringify(sent),
         keepalive,
         cache: "no-store",
+        signal: controller ? controller.signal : undefined,
       });
+      if (timeout) window.clearTimeout(timeout);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       Object.keys(sent).forEach((key) => {
@@ -762,6 +924,7 @@
         setSyncState("online");
       }
     } catch (error) {
+      if (timeout) window.clearTimeout(timeout);
       sync.sending = false;
       writePending();
       setSyncState("offline");
@@ -791,7 +954,7 @@
       if (payload.data == null) {
         if (!sync.ready) return;
         const hadData =
-          (sync.remote.sections && sync.remote.sections.length) ||
+          (sync.remote.groups && sync.remote.groups.length) ||
           Object.keys(sync.remote.people || {}).length ||
           Object.keys(sync.remote.relations || {}).length;
         if (!hadData) return;
@@ -800,7 +963,13 @@
         markSyncAlive();
       } else {
         sync.blockWrites = false;
-        applyRemoteSnapshot(normalizeRemote(payload.data));
+        const remote = normalizeRemote(payload.data);
+        if (remote.legacy) sync.legacyRemote = true;
+        if (remote.missingGroupIds && remote.missingGroupIds.length) {
+          sync.missingGroupIds = remote.missingGroupIds.slice();
+          queueSync();
+        }
+        applyRemoteSnapshot(remote);
         markSyncAlive();
       }
       return;
@@ -912,13 +1081,21 @@
   }
 
   function canSeedRemote() {
-    return !isDemoWorkspace() && (data.people.length > 0 || data.sections.length > 0);
+    return !isDemoWorkspace() && data.people.length > 0;
   }
 
   async function loadRemote() {
     if (!sync || !sync.enabled) return;
+    const controller = typeof AbortController === "function" ? new AbortController() : null;
+    const timeout = controller
+      ? window.setTimeout(() => controller.abort(), 15000)
+      : null;
     try {
-      const response = await fetch(`${SYNC_URL}/${SYNC_PATH}.json`, { cache: "no-store" });
+      const response = await fetch(`${SYNC_URL}/${SYNC_PATH}.json`, {
+        cache: "no-store",
+        signal: controller ? controller.signal : undefined,
+      });
+      if (timeout) window.clearTimeout(timeout);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const raw = await response.json();
 
@@ -937,13 +1114,19 @@
       }
 
       const remote = normalizeRemote(raw);
+      if (remote.legacy) sync.legacyRemote = true;
+      if (remote.missingGroupIds && remote.missingGroupIds.length) {
+        sync.missingGroupIds = remote.missingGroupIds.slice();
+      }
       if (Object.keys(sync.pending).length) applyPatch(remote, sync.pending);
       sync.ready = true;
       sync.blockWrites = false;
       applyRemoteSnapshot(remote, { initial: true });
       setSyncState("online");
       if (Object.keys(sync.pending).length) flushSync();
+      if (sync.legacyRemote || sync.missingGroupIds.length) queueSync();
     } catch {
+      if (timeout) window.clearTimeout(timeout);
       setSyncState("offline");
       scheduleSyncRetry(loadRemote);
     }
@@ -965,6 +1148,8 @@
       deferTimer: null,
       deferred: null,
       watchdog: null,
+      legacyRemote: false,
+      missingGroupIds: [],
       version: 0,
       lastAt: 0,
     };
@@ -994,10 +1179,12 @@
       fileInput: $("fileInput"),
       sidebar: $("sidebar"),
       peopleCount: $("peopleCount"),
+      groupsCount: $("groupsCount"),
+      activeGroupLabel: $("activeGroupLabel"),
       searchInput: $("searchInput"),
       peopleList: $("peopleList"),
-      addSectionBtn: $("addSectionBtn"),
-      sectionList: $("sectionList"),
+      addGroupBtn: $("addGroupBtn"),
+      groupList: $("groupList"),
       openHelpLink: $("openHelpLink"),
       syncStatus: $("syncStatus"),
       canvasArea: $("canvasArea"),
@@ -1014,7 +1201,6 @@
       focusBackBtn: $("focusBackBtn"),
       focusTitle: $("focusTitle"),
       focusMeta: $("focusMeta"),
-      filterChip: $("filterChip"),
       connectHint: $("connectHint"),
       emptyState: $("emptyState"),
       emptyAddBtn: $("emptyAddBtn"),
@@ -1031,7 +1217,7 @@
       personDialogEyebrow: $("personDialogEyebrow"),
       personDialogTitle: $("personDialogTitle"),
       personName: $("personName"),
-      personSection: $("personSection"),
+      personGroup: $("personGroup"),
       personAvatar: $("personAvatar"),
       personAvatarFile: $("personAvatarFile"),
       personAvatarUrl: $("personAvatarUrl"),
@@ -1057,12 +1243,12 @@
       relationTypes: $("relationTypes"),
       relationDeleteBtn: $("relationDeleteBtn"),
       relationSaveBtn: $("relationSaveBtn"),
-      sectionDialog: $("sectionDialog"),
-      sectionForm: $("sectionForm"),
-      sectionDialogTitle: $("sectionDialogTitle"),
-      sectionName: $("sectionName"),
-      sectionColors: $("sectionColors"),
-      sectionDeleteBtn: $("sectionDeleteBtn"),
+      groupDialog: $("groupDialog"),
+      groupForm: $("groupForm"),
+      groupDialogTitle: $("groupDialogTitle"),
+      groupName: $("groupName"),
+      groupColors: $("groupColors"),
+      groupDeleteBtn: $("groupDeleteBtn"),
       helpDialog: $("helpDialog"),
       helpLegend: $("helpLegend"),
       helpExportBtn: $("helpExportBtn"),
@@ -1134,12 +1320,6 @@
     return window.matchMedia("(max-width: 1080px)").matches;
   }
 
-  function matchesSectionFilter(person) {
-    if (!ui.sectionFilter) return true;
-    if (ui.sectionFilter === "none") return !person.sectionId;
-    return person.sectionId === ui.sectionFilter;
-  }
-
   function isFamilyRelation(relation) {
     return !!relation && FAMILY_TYPES.has(relation.type);
   }
@@ -1161,11 +1341,25 @@
     return ids;
   }
 
+  function socialEntries(person) {
+    if (!person) return [];
+    return relationsOf(person.id)
+      .filter(isSocialRelation)
+      .map((relation) => {
+        const otherId = relation.from === person.id ? relation.to : relation.from;
+        const other = personById(otherId);
+        return other ? { relation, other, config: REL_BY_ID[relation.type] } : null;
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.config.width - a.config.width || a.other.name.localeCompare(b.other.name, "es"));
+  }
+
   function familyComponentIds(rootId) {
     const ids = new Set();
-    if (!personById(rootId)) return ids;
+    const root = personById(rootId);
+    if (!root) return ids;
     const adjacency = new Map();
-    data.relations.forEach((relation) => {
+    relationsInGroup(root.groupId).forEach((relation) => {
       if (!isFamilyRelation(relation)) return;
       if (!adjacency.has(relation.from)) adjacency.set(relation.from, new Set());
       if (!adjacency.has(relation.to)) adjacency.set(relation.to, new Set());
@@ -1188,12 +1382,18 @@
   }
 
   function focusedPerson() {
-    return ui.focusRootId ? personById(ui.focusRootId) : null;
+    const person = ui.focusRootId ? personById(ui.focusRootId) : null;
+    const group = activeGroup();
+    if (!person || !group || person.groupId !== group.id) return null;
+    return person;
   }
 
   function visiblePersonIds() {
     const ids = new Set();
-    if (!data.people.length) return ids;
+    const group = activeGroup();
+    if (!group) return ids;
+    const scoped = peopleInGroup(group.id);
+    if (!scoped.length) return ids;
 
     const root = focusedPerson();
     if (root) {
@@ -1208,37 +1408,42 @@
     }
 
     if (ui.viewMode === "all") {
-      data.people.forEach((person) => ids.add(person.id));
+      scoped.forEach((person) => ids.add(person.id));
       return ids;
     }
 
+    const relations = relationsInGroup(group.id);
     const familyIds = new Set();
     let familyCount = 0;
-    data.relations.forEach((relation) => {
+    relations.forEach((relation) => {
       if (!isFamilyRelation(relation)) return;
       familyCount += 1;
       familyIds.add(relation.from);
       familyIds.add(relation.to);
     });
 
-    data.people.forEach((person) => {
-      const relations = relationsOf(person.id);
-      if (!familyCount || familyIds.has(person.id) || !relations.length) ids.add(person.id);
+    scoped.forEach((person) => {
+      const links = relationsOf(person.id);
+      if (!familyCount || familyIds.has(person.id) || !links.length) ids.add(person.id);
     });
 
-    if (ui.selectedId && personById(ui.selectedId)) ids.add(ui.selectedId);
+    if (ui.selectedId && scoped.some((person) => person.id === ui.selectedId)) ids.add(ui.selectedId);
     return ids;
   }
 
   function visiblePeople() {
+    const group = activeGroup();
+    if (!group) return [];
     const ids = visiblePersonIds();
-    return data.people.filter((person) => ids.has(person.id));
+    return peopleInGroup(group.id).filter((person) => ids.has(person.id));
   }
 
   function visibleRelations() {
+    const group = activeGroup();
+    if (!group) return [];
     const ids = visiblePersonIds();
     const root = focusedPerson();
-    let list = data.relations.filter((relation) => ids.has(relation.from) && ids.has(relation.to));
+    let list = relationsInGroup(group.id).filter((relation) => ids.has(relation.from) && ids.has(relation.to));
 
     if (root) {
       const socialMode = familyComponentIds(root.id).size <= 1;
@@ -1257,31 +1462,37 @@
 
   function hiddenSocialCount() {
     if (ui.viewMode !== "family" || ui.focusRootId) return 0;
+    const group = activeGroup();
+    if (!group) return 0;
     const visible = visiblePersonIds();
-    return data.people.filter((person) => !visible.has(person.id)).length;
+    return peopleInGroup(group.id).filter((person) => !visible.has(person.id)).length;
   }
 
   function renderPeopleList() {
     els.peopleList.innerHTML = "";
+    const group = activeGroup();
     const query = fold(ui.query);
-    let people = data.people.filter(matchesSectionFilter);
+    let people = group ? peopleInGroup(group.id) : [];
 
     if (query) {
       people = people.filter((person) => {
-        const section = sectionById(person.sectionId);
-        const haystack = fold(`${person.name} ${person.description} ${section ? section.name : ""}`);
+        const haystack = fold(`${person.name} ${person.description} ${group ? group.name : ""}`);
         return haystack.includes(query);
       });
     }
 
     people = [...people].sort((a, b) => a.name.localeCompare(b.name, "es"));
 
-    if (!data.people.length) {
-      els.peopleList.appendChild(el("p", "list-empty", "Aún no hay personajes. Crea el primero para empezar tu wiki."));
+    if (!group) {
+      els.peopleList.appendChild(el("p", "list-empty", "Crea un grupo de familia para empezar."));
+      return;
+    }
+    if (!peopleInGroup(group.id).length) {
+      els.peopleList.appendChild(el("p", "list-empty", "Este grupo aún no tiene personajes. Crea el primero para empezar su árbol."));
       return;
     }
     if (!people.length) {
-      els.peopleList.appendChild(el("p", "list-empty", "No hay personajes que coincidan con esta búsqueda o sección."));
+      els.peopleList.appendChild(el("p", "list-empty", "No hay personajes que coincidan con esta búsqueda."));
       return;
     }
 
@@ -1296,8 +1507,11 @@
 
       const copy = el("span", "person-row-copy");
       copy.appendChild(el("span", "person-row-name", person.name));
-      const section = sectionById(person.sectionId);
-      copy.appendChild(el("span", "person-row-sub", section ? section.name : "Sin sección"));
+      const links = relationsOf(person.id);
+      const social = links.filter(isSocialRelation).length;
+      let sub = links.length ? plural(links.length, "vínculo", "vínculos") : "Sin vínculos";
+      if (social) sub += ` · ${plural(social, "contacto", "contactos")}`;
+      copy.appendChild(el("span", "person-row-sub", sub));
 
       row.append(avatar, copy);
       row.addEventListener("click", () => {
@@ -1317,12 +1531,14 @@
     });
   }
 
-  function makeSectionRow({ name, color, count, active, onClick, onEdit }) {
-    const row = el("div", "section-row");
+  function makeGroupRow({ name, color, count, links, active, onClick, onEdit }) {
+    const row = el("div", "section-row group-row");
     if (active) row.classList.add("active");
 
     const main = el("button", "section-main");
     main.type = "button";
+    main.title = `${plural(count, "personaje", "personajes")} · ${plural(links, "vínculo", "vínculos")}`;
+    main.setAttribute("aria-pressed", String(active));
     const dot = el("span", "section-dot");
     dot.style.setProperty("--dot", color);
     dot.style.background = color;
@@ -1336,7 +1552,7 @@
       const edit = el("button", "section-edit");
       edit.type = "button";
       edit.title = `Editar ${name}`;
-      edit.setAttribute("aria-label", `Editar ${name}`);
+      edit.setAttribute("aria-label", `Editar el grupo ${name}`);
       edit.innerHTML = ICONS.edit;
       edit.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -1348,70 +1564,41 @@
     return row;
   }
 
-  function renderSections() {
-    const list = els.sectionList;
+  function renderGroups() {
+    const list = els.groupList;
     list.innerHTML = "";
 
-    const total = data.people.length;
-    list.appendChild(
-      makeSectionRow({
-        name: "Todos los personajes",
-        color: "#f2c14e",
-        count: total,
-        active: ui.sectionFilter === null,
-        onClick: () => setSectionFilter(null),
-      })
-    );
-
-    data.sections.forEach((section) => {
-      const count = data.people.filter((p) => p.sectionId === section.id).length;
+    data.groups.forEach((group) => {
+      const people = peopleInGroup(group.id);
       list.appendChild(
-        makeSectionRow({
-          name: section.name,
-          color: section.color,
-          count,
-          active: ui.sectionFilter === section.id,
-          onClick: () => setSectionFilter(ui.sectionFilter === section.id ? null : section.id),
-          onEdit: () => openSectionDialog(section.id),
+        makeGroupRow({
+          name: group.name,
+          color: group.color,
+          count: people.length,
+          links: relationsInGroup(group.id).length,
+          active: activeGroupId() === group.id,
+          onClick: () => setActiveGroup(group.id),
+          onEdit: () => openGroupDialog(group.id),
         })
       );
     });
 
-    const unsectioned = data.people.filter((p) => !p.sectionId).length;
-    if (unsectioned) {
-      list.appendChild(
-        makeSectionRow({
-          name: "Sin sección",
-          color: "#8a94a6",
-          count: unsectioned,
-          active: ui.sectionFilter === "none",
-          onClick: () => setSectionFilter(ui.sectionFilter === "none" ? null : "none"),
-        })
-      );
-    }
-
-    if (!data.sections.length) {
-      list.appendChild(el("p", "list-empty", "Crea una sección para agrupar y filtrar personajes."));
+    if (!data.groups.length) {
+      list.appendChild(el("p", "list-empty", "Crea un grupo de familia para empezar un árbol nuevo."));
     }
   }
 
-  function sectionChip(section, onClick) {
-    const chip = document.createElement(onClick ? "button" : "span");
-    chip.className = "section-chip";
-    if (onClick) {
-      chip.type = "button";
-      chip.title = "Filtrar el árbol por esta sección";
-      chip.addEventListener("click", onClick);
-    }
-    if (section) {
-      chip.style.setProperty("--chip-color", section.color);
-      chip.style.setProperty("--chip-bg", hexToRgba(section.color, 0.1));
-      chip.style.setProperty("--chip-border", hexToRgba(section.color, 0.25));
+  function groupChip(group) {
+    const chip = el("span", "section-chip");
+    if (group) {
+      chip.style.setProperty("--chip-color", group.color);
+      chip.style.setProperty("--chip-bg", hexToRgba(group.color, 0.1));
+      chip.style.setProperty("--chip-border", hexToRgba(group.color, 0.25));
       const dot = el("span", "chip-dot");
-      chip.append(dot, document.createTextNode(section.name));
+      chip.append(dot, document.createTextNode(group.name));
     } else {
       chip.style.setProperty("--chip-color", "#8a94a6");
-      chip.append(document.createTextNode("Sin sección"));
+      chip.append(document.createTextNode("Sin grupo"));
     }
     return chip;
   }
@@ -1450,11 +1637,14 @@
     tip.innerHTML = "Doble clic en el lienzo para crear una persona en ese punto, o pulsa <kbd>N</kbd> para añadirla.";
     empty.appendChild(tip);
 
-    if (data.people.length) {
+    const currentGroup = activeGroup();
+    if (currentGroup && peopleInGroup(currentGroup.id).length) {
+      const peopleCount = peopleInGroup(currentGroup.id).length;
+      const relationCount = relationsInGroup(currentGroup.id).length;
       const stats = el(
         "p",
         "detail-tip",
-        `${plural(data.people.length, "personaje", "personajes")} · ${plural(data.relations.length, "vínculo", "vínculos")}`
+        `${plural(peopleCount, "personaje", "personajes")} · ${plural(relationCount, "vínculo", "vínculos")}`
       );
       empty.appendChild(stats);
     }
@@ -1464,7 +1654,7 @@
   }
 
   function buildHero(person) {
-    const section = sectionById(person.sectionId);
+    const group = groupById(person.groupId);
     const color = colorOf(person);
     const hero = el("div", "hero");
     hero.style.setProperty("--hero-tint", hexToRgba(color, 0.14));
@@ -1482,18 +1672,15 @@
     const avatar = el("div", "hero-avatar");
     paintAvatar(avatar, person);
 
-    const chip = sectionChip(section, section ? () => {
-      setSectionFilter(section.id);
-      if (isNarrow()) els.app.classList.remove("detail-open");
-    } : null);
+    const chip = groupChip(group);
 
     const name = el("h1", null, person.name);
     const relations = relationsOf(person.id);
     const sub = el("p", "hero-sub");
     sub.append(document.createTextNode(plural(relations.length, "vínculo", "vínculos")));
-    if (section) {
+    if (group) {
       const sep = el("span", "sep", "·");
-      sub.append(sep, document.createTextNode(section.name));
+      sub.append(sep, document.createTextNode(group.name));
     }
 
     const focus = el("button", "hero-tree-btn");
@@ -1510,15 +1697,83 @@
     return hero;
   }
 
-  function buildRelationsSection(person) {
+  function buildContactsSection(person) {
+    const section = el("div", "detail-section contacts-section");
+    const head = el("div", "detail-section-head");
+    const entries = socialEntries(person);
+    head.appendChild(el("h2", null, `Contactos y conocidos · ${entries.length}`));
+    section.appendChild(head);
+
+    if (!entries.length) {
+      section.appendChild(
+        el(
+          "div",
+          "description-box empty",
+          "No tiene contactos o conocidos registrados. Añade una amistad o un trato ocasional para completar su red social."
+        )
+      );
+      const create = el("button", "text-btn");
+      create.type = "button";
+      create.style.marginTop = "8px";
+      create.innerHTML = ICONS.plus + "<span>Añadir un contacto</span>";
+      create.addEventListener("click", () => startConnect(person.id));
+      section.appendChild(create);
+      return section;
+    }
+
+    const list = el("div", "contact-chips");
+    entries.forEach(({ relation, other, config }) => {
+      const chip = el("button", "contact-chip");
+      chip.type = "button";
+      chip.title = `Abrir la ficha de ${other.name} · ${config.label}`;
+      const avatar = el("span", "mini-avatar contact-chip-avatar");
+      paintAvatar(avatar, other);
+      const copy = el("span", "contact-chip-copy");
+      copy.appendChild(el("span", "contact-chip-name", other.name));
+      copy.appendChild(el("span", "contact-chip-type", config.label));
+      chip.append(avatar, copy);
+      chip.addEventListener("click", () => {
+        hideContactCard();
+        if (!visiblePersonIds().has(other.id)) {
+          openFocusTree(other.id);
+          return;
+        }
+        selectPerson(other.id);
+        focusPerson(other.id);
+      });
+      list.appendChild(chip);
+    });
+    section.appendChild(list);
+    section.appendChild(
+      el(
+        "p",
+        "relation-note",
+        "Los contactos sociales no forman parte del árbol familiar. Pasa el cursor sobre una tarjeta del lienzo para verlos al instante."
+      )
+    );
+    return section;
+  }
+
+  function buildRelationsSection(person, { includeSocial = true } = {}) {
     const section = el("div", "detail-section");
     const head = el("div", "detail-section-head");
-    const relations = relationsOf(person.id);
-    head.appendChild(el("h2", null, `Vínculos · ${relations.length}`));
+    const allRelations = relationsOf(person.id);
+    const relations = includeSocial
+      ? allRelations
+      : allRelations.filter((relation) => isFamilyRelation(relation));
+    head.appendChild(
+      el("h2", null, includeSocial ? `Vínculos · ${relations.length}` : `Vínculos familiares · ${relations.length}`)
+    );
     section.appendChild(head);
 
     if (!relations.length) {
-      const box = el("div", "description-box empty", "Este personaje todavía no tiene vínculos. Conéctalo con alguien para empezar a tejer su historia.");
+      const box = el(
+        "div",
+        "description-box empty",
+        !includeSocial && allRelations.length
+          ? "Sin vínculos familiares. Sus contactos y conocidos aparecen en la sección superior."
+          : "Este personaje todavía no tiene vínculos. Conéctalo con alguien para empezar a tejer su historia."
+      );
       section.appendChild(box);
       const create = el("button", "text-btn");
       create.type = "button";
@@ -1530,7 +1785,7 @@
     }
 
     const groups = [
-      { label: "Familia", items: [] },
+      { label: includeSocial ? "Familia" : "Vínculos familiares", items: [] },
       { label: "Vínculos sociales", items: [] },
     ];
 
@@ -1545,7 +1800,7 @@
 
     entries.forEach((entry) => {
       if (isFamilyRelation(entry.relation)) groups[0].items.push(entry);
-      else groups[1].items.push(entry);
+      else if (includeSocial) groups[1].items.push(entry);
     });
 
     groups.forEach((group) => {
@@ -1617,7 +1872,8 @@
   function renderDetail() {
     els.detail.innerHTML = "";
     const person = personById(ui.selectedId);
-    if (!person) {
+    const active = activeGroup();
+    if (!person || !active || person.groupId !== active.id) {
       els.detail.appendChild(buildDetailPlaceholder());
       return;
     }
@@ -1640,8 +1896,10 @@
     descBox.textContent = person.description || "Sin descripción todavía. Añade su historia, personalidad o secretos.";
     description.appendChild(descBox);
 
+    const familyMode = ui.viewMode === "family";
     body.appendChild(description);
-    body.appendChild(buildRelationsSection(person));
+    if (familyMode) body.appendChild(buildContactsSection(person));
+    body.appendChild(buildRelationsSection(person, { includeSocial: !familyMode }));
 
     scroll.append(hero, body);
 
@@ -1679,7 +1937,7 @@
       const relations = relationsOf(person.id);
       const familyCount = relations.filter(isFamilyRelation).length;
       const socialCount = relations.filter(isSocialRelation).length;
-      const section = sectionById(person.sectionId);
+      const group = groupById(person.groupId);
       const node = document.createElement("article");
       node.className = "node";
       node.dataset.id = person.id;
@@ -1691,7 +1949,6 @@
       node.style.setProperty("--node-glow", hexToRgba(color, 0.18));
       if (ui.selectedId === person.id) node.classList.add("is-selected");
       if (ui.focusRootId === person.id) node.classList.add("is-root");
-      if (!matchesSectionFilter(person)) node.classList.add("is-dimmed");
       if (ui.connect.active && ui.connect.fromId === person.id) node.classList.add("connect-source");
       if (!familyCount && socialCount) node.classList.add("is-social-only");
 
@@ -1705,7 +1962,7 @@
       const meta = el("div", "node-meta");
       meta.setAttribute("aria-hidden", "true");
       const dot = el("span", "node-meta-dot");
-      meta.append(dot, el("span", null, section ? section.name : "Sin sección"));
+      meta.append(dot, el("span", null, group ? group.name : "Sin grupo"));
       copy.appendChild(meta);
 
       card.append(avatar, copy);
@@ -1726,9 +1983,18 @@
         node.appendChild(rootMark);
       }
 
+      node.addEventListener("pointerenter", (event) => {
+        if (event.pointerType && event.pointerType !== "mouse") return;
+        scheduleContactCard(person, node);
+      });
+      node.addEventListener("pointerleave", () => hideContactCardSoon());
+      node.addEventListener("focus", () => scheduleContactCard(person, node));
+      node.addEventListener("blur", () => hideContactCardSoon());
+
       node.addEventListener("click", (event) => {
         event.stopPropagation();
         if (performance.now() < ui.suppressClickUntil) return;
+        hideContactCard();
         handleNodeActivate(person.id);
       });
 
@@ -1743,6 +2009,152 @@
 
       els.nodeLayer.appendChild(node);
     });
+  }
+
+  function contactCardAllowed(person) {
+    if (!person || ui.viewMode !== "family" || ui.connect.active) return false;
+    if (document.querySelector("dialog[open]")) return false;
+    const group = activeGroup();
+    if (!group || person.groupId !== group.id) return false;
+    return socialEntries(person).length > 0;
+  }
+
+  function ensureContactCard() {
+    if (ui.hoverCard && ui.hoverCard.isConnected) return ui.hoverCard;
+    const card = el("div", "contact-card");
+    card.setAttribute("role", "dialog");
+    card.setAttribute("aria-label", "Contactos y conocidos");
+    card.hidden = true;
+    card.addEventListener("pointerenter", () => {
+      if (ui.hoverTimer) {
+        window.clearTimeout(ui.hoverTimer);
+        ui.hoverTimer = null;
+      }
+    });
+    card.addEventListener("pointerleave", () => hideContactCardSoon());
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") hideContactCard();
+    });
+    document.body.appendChild(card);
+    ui.hoverCard = card;
+    return card;
+  }
+
+  function positionContactCard(card, node) {
+    const rect = node.getBoundingClientRect();
+    const margin = 12;
+    card.style.visibility = "hidden";
+    card.hidden = false;
+    const box = card.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+
+    let left = rect.right + margin;
+    if (left + box.width > vw - margin) left = rect.left - box.width - margin;
+    if (left < margin) left = Math.min(Math.max(margin, rect.left), vw - box.width - margin);
+
+    let top = rect.top + rect.height / 2 - box.height / 2;
+    top = Math.max(margin, Math.min(top, vh - box.height - margin));
+
+    card.style.left = `${Math.round(left)}px`;
+    card.style.top = `${Math.round(top)}px`;
+    card.style.visibility = "visible";
+  }
+
+  function renderContactCard(person, node) {
+    const card = ensureContactCard();
+    const entries = socialEntries(person);
+    card.innerHTML = "";
+
+    const head = el("div", "contact-card-head");
+    head.appendChild(el("span", "contact-card-eyebrow", "Contactos y conocidos"));
+    head.appendChild(el("strong", "contact-card-title", person.name));
+    head.appendChild(
+      el("span", "contact-card-sub", plural(entries.length, "contacto social", "contactos sociales"))
+    );
+    card.appendChild(head);
+
+    const list = el("div", "contact-card-list");
+    entries.slice(0, 8).forEach(({ relation, other, config }) => {
+      const row = el("button", "contact-card-row");
+      row.type = "button";
+      row.title = `Abrir la ficha de ${other.name}`;
+      const avatar = el("span", "mini-avatar contact-card-avatar");
+      paintAvatar(avatar, other);
+      const copy = el("span", "contact-card-copy");
+      copy.appendChild(el("span", "contact-card-name", other.name));
+      copy.appendChild(el("span", "contact-card-type", config.label));
+      row.append(avatar, copy);
+      row.addEventListener("click", () => {
+        hideContactCard({ restoreFocus: false });
+        if (!visiblePersonIds().has(other.id)) {
+          openFocusTree(other.id);
+          return;
+        }
+        selectPerson(other.id);
+        focusPerson(other.id);
+      });
+      list.appendChild(row);
+    });
+    card.appendChild(list);
+
+    if (entries.length > 8) {
+      card.appendChild(
+        el("p", "contact-card-more", `y ${entries.length - 8} más en su ficha`)
+      );
+    }
+
+    card.appendChild(
+      el("p", "contact-card-hint", "Haz clic en una tarjeta para ver todos sus contactos.")
+    );
+
+    ui.hoverNode = node;
+    positionContactCard(card, node);
+  }
+
+  function scheduleContactCard(person, node) {
+    if (ui.hoverTimer) window.clearTimeout(ui.hoverTimer);
+    if (!contactCardAllowed(person)) {
+      hideContactCard();
+      return;
+    }
+    ui.hoverPersonId = person.id;
+    ui.hoverTimer = window.setTimeout(() => {
+      ui.hoverTimer = null;
+      if (!node.isConnected) return;
+      const current = personById(person.id);
+      if (!current || !contactCardAllowed(current)) return;
+      renderContactCard(current, node);
+    }, 260);
+  }
+
+  function hideContactCardSoon() {
+    if (ui.hoverTimer) {
+      window.clearTimeout(ui.hoverTimer);
+      ui.hoverTimer = null;
+    }
+    if (!ui.hoverCard) return;
+    ui.hoverTimer = window.setTimeout(() => {
+      ui.hoverTimer = null;
+      if (ui.hoverCard && ui.hoverCard.contains(document.activeElement)) return;
+      hideContactCard();
+    }, 140);
+  }
+
+  function hideContactCard({ restoreFocus = true } = {}) {
+    if (ui.hoverTimer) {
+      window.clearTimeout(ui.hoverTimer);
+      ui.hoverTimer = null;
+    }
+    ui.hoverPersonId = null;
+    if (!ui.hoverCard) return;
+    const card = ui.hoverCard;
+    const node = ui.hoverNode;
+    const hadFocus = card.contains(document.activeElement);
+    card.hidden = true;
+    card.innerHTML = "";
+    ui.hoverNode = null;
+    if (restoreFocus && hadFocus && node && node.isConnected) node.focus();
   }
 
   function startNodeDrag(event, person, node) {
@@ -1761,6 +2173,7 @@
       const dy = (moveEvent.clientY - startClient.y) / view.k;
       if (!moved && Math.hypot(dx, dy) > 4) {
         moved = true;
+        hideContactCard();
         node.classList.add("dragging");
       }
       if (!moved) return;
@@ -2058,7 +2471,7 @@
       const config = REL_BY_ID[relation.type];
       if (!a || !b || !config) return;
 
-      const dimmed = !matchesSectionFilter(a) || !matchesSectionFilter(b);
+      const dimmed = false;
       const selected = ui.selectedRelationId === relation.id;
       let geometry;
       let socialStyle = null;
@@ -2101,8 +2514,7 @@
       const geometry = branchGeometry(group);
       const config = REL_BY_ID.hijo;
       const parentNames = group.parents.map((person) => person.name).join(" y ");
-      const dimmed = group.parents.some((person) => !matchesSectionFilter(person))
-        || group.children.some((item) => !matchesSectionFilter(item.person));
+      const dimmed = false;
       const selected = group.relations.some((relation) => relation.id === ui.selectedRelationId);
       const count = group.children.length;
       const groupLabel = count > 1 ? `Hijos/as · ${count}` : "Hijo/a";
@@ -2446,13 +2858,14 @@
       ? els.app.classList.contains("detail-open")
       : !els.app.classList.contains("detail-collapsed");
     els.menuBtn.setAttribute("aria-expanded", String(leftOpen));
-    els.menuBtn.title = leftOpen ? "Ocultar personajes y secciones" : "Mostrar personajes y secciones";
+    els.menuBtn.title = leftOpen ? "Ocultar grupos y personajes" : "Mostrar grupos y personajes";
     els.detailToggleBtn.setAttribute("aria-pressed", String(detailOpen));
     els.detailToggleBtn.title = detailOpen ? "Ocultar la ficha lateral" : "Mostrar la ficha lateral";
     els.detailToggleBtn.setAttribute("aria-label", detailOpen ? "Ocultar la ficha lateral" : "Mostrar la ficha lateral");
   }
 
   function toggleLeftPanel() {
+    hideContactCard();
     if (isNarrow()) {
       els.app.classList.toggle("left-open");
       els.app.classList.remove("detail-open");
@@ -2465,6 +2878,7 @@
   }
 
   function toggleDetailPanel() {
+    hideContactCard();
     if (isNarrow()) {
       els.app.classList.toggle("detail-open");
       els.app.classList.remove("left-open");
@@ -2597,54 +3011,33 @@
     if (!silent) toast("Árbol organizado por generaciones.", "success");
   }
 
-  /* ---------------- Filtros y estado visual ---------------- */
-  function updateFilterChip() {
-    const chip = els.filterChip;
-    chip.innerHTML = "";
-    if (!ui.sectionFilter) {
-      chip.classList.add("hidden");
-      return;
+  /* ---------------- Grupos de familia ---------------- */
+  function setActiveGroup(groupId, { fit = true, saveView = true } = {}) {
+    const group = groupById(groupId);
+    if (!group) return;
+    if (group.id === activeGroupId() && !fit) return;
+    hideContactCard();
+    if (saveView) {
+      const current = activeGroupId();
+      if (current) groupViews[current] = { ...view };
     }
-
-    let name = "";
-    let color = "#8a94a6";
-    if (ui.sectionFilter === "none") {
-      name = "Sin sección";
-    } else {
-      const section = sectionById(ui.sectionFilter);
-      if (!section) {
-        ui.sectionFilter = null;
-        chip.classList.add("hidden");
-        return;
-      }
-      name = section.name;
-      color = section.color;
+    ui.activeGroupId = group.id;
+    ui.selectedId = null;
+    ui.focusRootId = null;
+    ui.connect.active = false;
+    ui.connect.fromId = null;
+    ui.connect.pointer = null;
+    renderAll();
+    const savedView = groupViews[group.id];
+    if (savedView) {
+      view = normalizeView(savedView);
+      applyView();
+      scheduleSave();
+    } else if (fit) {
+      window.requestAnimationFrame(() => fitView(true));
     }
-
-    chip.classList.remove("hidden");
-    const dot = el("span", "section-dot");
-    dot.style.setProperty("--dot", color);
-    dot.style.background = color;
-    chip.appendChild(dot);
-    chip.appendChild(el("span", "filter-name", name));
-
-    const clear = el("button");
-    clear.type = "button";
-    clear.title = "Quitar filtro";
-    clear.setAttribute("aria-label", "Quitar filtro de sección");
-    clear.innerHTML = ICONS.close;
-    clear.addEventListener("click", () => setSectionFilter(null));
-    chip.appendChild(clear);
-  }
-
-  function setSectionFilter(filter) {
-    if (filter && filter !== "none" && !sectionById(filter)) filter = null;
-    ui.sectionFilter = filter;
-    renderSections();
-    renderPeopleList();
-    renderNodes();
-    renderEdges();
-    updateFilterChip();
+    if (isNarrow()) els.app.classList.remove("left-open", "detail-open");
+    updatePanelChrome();
   }
 
   /* ---------------- Modo vincular ---------------- */
@@ -2712,15 +3105,21 @@
 
   /* ---------------- Render global ---------------- */
   function updateChrome() {
-    els.peopleCount.textContent = String(data.people.length);
-    els.emptyState.classList.toggle("hidden", data.people.length > 0);
-    updateFilterChip();
+    const group = activeGroup();
+    const count = group ? peopleInGroup(group.id).length : 0;
+    els.peopleCount.textContent = String(count);
+    if (els.groupsCount) els.groupsCount.textContent = String(data.groups.length);
+    if (els.activeGroupLabel) {
+      els.activeGroupLabel.textContent = group ? `Árbol activo: ${group.name}` : "Sin grupo activo";
+    }
+    els.emptyState.classList.toggle("hidden", count > 0);
     updateViewChrome();
     updatePanelChrome();
   }
 
   function renderAll() {
-    renderSections();
+    hideContactCard();
+    renderGroups();
     renderPeopleList();
     renderNodes();
     renderEdges();
@@ -2731,7 +3130,10 @@
 
   /* ---------------- Selección y avisos ---------------- */
   function selectPerson(personId, options = {}) {
-    if (!personById(personId)) return;
+    const person = personById(personId);
+    const group = activeGroup();
+    if (!person || !group || person.groupId !== group.id) return;
+    hideContactCard();
     ui.selectedId = personId;
     renderPeopleList();
     renderNodes();
@@ -2742,6 +3144,7 @@
   }
 
   function clearSelection() {
+    hideContactCard();
     ui.selectedId = null;
     renderPeopleList();
     renderNodes();
@@ -2845,21 +3248,16 @@
   }
 
   /* ---------------- Personajes ---------------- */
-  function populatePersonSections(selectedId) {
-    els.personSection.innerHTML = "";
-    const none = document.createElement("option");
-    none.value = "";
-    none.textContent = "Sin sección";
-    els.personSection.appendChild(none);
-
-    data.sections.forEach((section) => {
+  function populatePersonGroups(selectedId) {
+    els.personGroup.innerHTML = "";
+    data.groups.forEach((group) => {
       const option = document.createElement("option");
-      option.value = section.id;
-      option.textContent = section.name;
-      els.personSection.appendChild(option);
+      option.value = group.id;
+      option.textContent = group.name;
+      els.personGroup.appendChild(option);
     });
-
-    els.personSection.value = data.sections.some((s) => s.id === selectedId) ? selectedId : "";
+    const fallback = activeGroupId() || (data.groups[0] ? data.groups[0].id : "");
+    els.personGroup.value = data.groups.some((group) => group.id === selectedId) ? selectedId : fallback;
   }
 
   function avatarFieldValue() {
@@ -2873,7 +3271,7 @@
     paintAvatar(els.personAvatarPreview, {
       name: els.personName.value.trim() || "?",
       avatar: isSafeImageUrl(value) ? value : "",
-      sectionId: els.personSection.value || null,
+      groupId: els.personGroup.value || null,
     });
   }
 
@@ -3078,11 +3476,11 @@
     els.personAvatarUrlDetails.open = isRemoteImageUrl(ui.avatarDraft);
     els.personDesc.value = person ? person.description : "";
 
-    let defaultSection = "";
-    if (person) defaultSection = person.sectionId || "";
-    else if (ui.sectionFilter && ui.sectionFilter !== "none") defaultSection = ui.sectionFilter;
+    ensureGroup();
+    const active = activeGroup();
+    const defaultGroupId = person ? person.groupId : active ? active.id : "";
 
-    populatePersonSections(defaultSection);
+    populatePersonGroups(defaultGroupId);
     updateAvatarControls();
     refreshAvatarPreview();
     els.personDeleteBtn.classList.toggle("hidden", !person);
@@ -3115,19 +3513,37 @@
       return;
     }
 
-    const sectionValue = els.personSection.value;
-    const sectionId = data.sections.some((s) => s.id === sectionValue) ? sectionValue : null;
+    const groupValue = els.personGroup.value;
+    const targetGroup = groupById(groupValue) || ensureGroup();
+    const groupId = targetGroup.id;
     const description = els.personDesc.value.trim();
     let newId = null;
 
     if (ui.personEditId) {
       const person = personById(ui.personEditId);
       if (!person) return;
+      const previousGroupId = person.groupId;
       person.name = name;
       person.avatar = avatarRaw;
-      person.sectionId = sectionId;
+      person.groupId = groupId;
       person.description = description;
-      toast("Ficha actualizada.", "success");
+      if (previousGroupId !== groupId) {
+        const validIds = new Set(
+          peopleInGroup(groupId)
+            .filter((other) => other.id !== person.id)
+            .map((other) => other.id)
+        );
+        data.relations = data.relations.filter((relation) => {
+          if (relation.from !== person.id && relation.to !== person.id) return true;
+          const otherId = relation.from === person.id ? relation.to : relation.from;
+          return validIds.has(otherId);
+        });
+        if (ui.focusRootId === person.id) ui.focusRootId = null;
+        ui.activeGroupId = groupId;
+        toast(`Ficha actualizada. Movida a «${targetGroup.name}»; se quitaron los vínculos con el grupo anterior.`, "success");
+      } else {
+        toast("Ficha actualizada.", "success");
+      }
     } else {
       let x;
       let y;
@@ -3144,12 +3560,14 @@
       const person = {
         id: uid("p"),
         name,
-        sectionId,
+        groupId,
         avatar: avatarRaw,
         description,
         x: clamp(x, 24, WORLD_W - NODE_W - 24),
         y: clamp(y, 24, WORLD_H - NODE_H - 24),
       };
+      rememberGroupView();
+      ui.activeGroupId = groupId;
       data.people.push(person);
       newId = person.id;
       ui.selectedId = person.id;
@@ -3330,97 +3748,119 @@
     toast("Vínculo eliminado.");
   }
 
-  /* ---------------- Secciones ---------------- */
+  /* ---------------- Grupos de familia ---------------- */
   function buildSwatches() {
-    els.sectionColors.innerHTML = "";
-    SECTION_COLORS.forEach((color) => {
-      const swatch = el("button", "swatch" + (color === ui.sectionColor ? " active" : ""));
+    els.groupColors.innerHTML = "";
+    GROUP_COLORS.forEach((color) => {
+      const swatch = el("button", "swatch" + (color === ui.groupColor ? " active" : ""));
       swatch.type = "button";
       swatch.style.setProperty("--sw", color);
       swatch.title = color;
       swatch.setAttribute("aria-label", `Elegir color ${color}`);
       swatch.addEventListener("click", () => {
-        ui.sectionColor = color;
+        ui.groupColor = color;
         buildSwatches();
       });
-      els.sectionColors.appendChild(swatch);
+      els.groupColors.appendChild(swatch);
     });
   }
 
-  function nextSectionColor() {
-    const used = new Set(data.sections.map((s) => s.color));
-    return SECTION_COLORS.find((c) => !used.has(c)) || SECTION_COLORS[0];
+  function nextGroupColor() {
+    const used = new Set(data.groups.map((group) => group.color));
+    return GROUP_COLORS.find((color) => !used.has(color)) || GROUP_COLORS[data.groups.length % GROUP_COLORS.length];
   }
 
-  function openSectionDialog(sectionId = null) {
-    const section = sectionId ? sectionById(sectionId) : null;
-    ui.sectionEditId = section ? section.id : null;
-    ui.sectionColor = section ? section.color : nextSectionColor();
+  function openGroupDialog(groupId = null) {
+    const group = groupId ? groupById(groupId) : null;
+    ui.groupEditId = group ? group.id : null;
+    ui.groupColor = group ? group.color : nextGroupColor();
 
-    els.sectionDialogTitle.textContent = section ? "Editar sección" : "Nueva sección";
-    els.sectionName.value = section ? section.name : "";
-    els.sectionDeleteBtn.classList.toggle("hidden", !section);
+    els.groupDialogTitle.textContent = group ? "Editar grupo de familia" : "Nuevo grupo de familia";
+    els.groupName.value = group ? group.name : "";
+    els.groupDeleteBtn.classList.toggle("hidden", !group);
     buildSwatches();
 
-    openDialog(els.sectionDialog);
+    openDialog(els.groupDialog);
     window.requestAnimationFrame(() => {
-      els.sectionName.focus();
-      if (section) els.sectionName.select();
+      els.groupName.focus();
+      if (group) els.groupName.select();
     });
   }
 
-  function handleSectionSubmit(event) {
+  function handleGroupSubmit(event) {
     event.preventDefault();
-    const name = els.sectionName.value.trim();
+    const name = els.groupName.value.trim();
     if (!name) {
-      toast("Ponle un nombre a la sección.", "error");
-      els.sectionName.focus();
+      toast("Ponle un nombre al grupo de familia.", "error");
+      els.groupName.focus();
       return;
     }
 
-    if (ui.sectionEditId) {
-      const section = sectionById(ui.sectionEditId);
-      if (!section) return;
-      section.name = name;
-      section.color = ui.sectionColor;
-      toast("Sección actualizada.", "success");
+    if (ui.groupEditId) {
+      const group = groupById(ui.groupEditId);
+      if (!group) return;
+      group.name = name;
+      group.color = ui.groupColor;
+      toast("Grupo actualizado.", "success");
     } else {
-      data.sections.push({
-        id: uid("s"),
+      const group = {
+        id: uid("g"),
         name,
-        color: ui.sectionColor,
-      });
-      toast("Sección creada.", "success");
+        color: ui.groupColor,
+      };
+      rememberGroupView();
+      data.groups.push(group);
+      ui.activeGroupId = group.id;
+      ui.selectedId = null;
+      ui.focusRootId = null;
+      toast("Grupo creado. Añade sus personajes.", "success");
     }
 
     saveData();
-    closeDialog(els.sectionDialog);
+    closeDialog(els.groupDialog);
     renderAll();
+    if (!ui.groupEditId) window.requestAnimationFrame(() => fitView(false));
   }
 
-  async function confirmDeleteSection(sectionId) {
-    const section = sectionById(sectionId);
-    if (!section) return;
-    const count = data.people.filter((p) => p.sectionId === sectionId).length;
+  async function confirmDeleteGroup(groupId) {
+    const group = groupById(groupId);
+    if (!group) return;
+    if (data.groups.length <= 1) {
+      toast("Crea otro grupo antes de eliminar este. Siempre debe quedar al menos uno.", "error");
+      return;
+    }
+    const people = peopleInGroup(group.id);
+    const count = people.length;
 
     const ok = await askConfirm({
-      title: "Eliminar sección",
+      title: "Eliminar grupo de familia",
       message: count
-        ? `«${section.name}» se eliminará. ${plural(count, "personaje quedará", "personajes quedarán")} sin sección, pero no se borrará a nadie.`
-        : `Se eliminará la sección «${section.name}».`,
-      confirmLabel: "Eliminar sección",
+        ? `Se eliminará «${group.name}» con ${plural(count, "personaje", "personajes")} y todos sus vínculos. Los demás grupos no se verán afectados.`
+        : `Se eliminará el grupo «${group.name}». Los demás grupos no se verán afectados.`,
+      confirmLabel: "Eliminar grupo",
     });
     if (!ok) return;
 
-    data.sections = data.sections.filter((s) => s.id !== sectionId);
-    data.people.forEach((person) => {
-      if (person.sectionId === sectionId) person.sectionId = null;
-    });
-    if (ui.sectionFilter === sectionId) ui.sectionFilter = null;
+    const ids = new Set(people.map((person) => person.id));
+    data.people = data.people.filter((person) => person.groupId !== groupId);
+    data.relations = data.relations.filter(
+      (relation) => !ids.has(relation.from) && !ids.has(relation.to)
+    );
+    data.groups = data.groups.filter((item) => item.id !== groupId);
+    delete groupViews[groupId];
+
+    const wasActive = ui.activeGroupId === groupId;
+    if (wasActive) {
+      rememberGroupView();
+      ui.activeGroupId = data.groups[0] ? data.groups[0].id : null;
+      ui.selectedId = null;
+      ui.focusRootId = null;
+    }
     saveData();
-    closeDialog(els.sectionDialog);
+    closeDialog(els.groupDialog);
     renderAll();
-    toast("Sección eliminada.");
+    if (wasActive) window.requestAnimationFrame(() => fitView(true));
+    toast("Grupo eliminado.");
   }
 
   /* ---------------- Interacción del lienzo ---------------- */
@@ -3431,6 +3871,7 @@
       if (event.button !== 0) return;
       if (event.target.closest(".node") || event.target.closest(".edge-hit")) return;
       cancelViewAnim();
+      hideContactCard();
       ui.pan = {
         sx: event.clientX,
         sy: event.clientY,
@@ -3447,6 +3888,7 @@
     });
 
     vp.addEventListener("pointermove", (event) => {
+      if (ui.pan) hideContactCard();
       if (ui.connect.active && ui.connect.fromId) {
         ui.connect.pointer = screenToWorld(event.clientX, event.clientY);
         if (ui.pointerRaf == null) {
@@ -3492,6 +3934,7 @@
 
     vp.addEventListener("wheel", (event) => {
       event.preventDefault();
+      hideContactCard();
       cancelViewAnim();
       const rect = vp.getBoundingClientRect();
       const unit = event.deltaMode === 1 ? 0.045 : 0.0015;
@@ -3518,9 +3961,9 @@
   function exportData() {
     const payload = {
       app: "nradiowave-rw",
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
-      sections: data.sections,
+      groups: data.groups,
       people: data.people,
       relations: data.relations,
     };
@@ -3546,7 +3989,6 @@
     ui.selectedId = null;
     ui.selectedRelationId = null;
     ui.relationCtx = null;
-    ui.sectionFilter = null;
     ui.query = "";
     ui.viewMode = "family";
     ui.focusRootId = null;
@@ -3568,14 +4010,14 @@
         throw new Error("El archivo no parece un árbol de Nradiowave R/W.");
       }
       const clean = sanitize(parsed);
-      if (!clean.people.length && !clean.sections.length) {
+      if (!clean.people.length && !clean.relations.length) {
         throw new Error("El archivo no contiene personajes.");
       }
 
-      if (data.people.length || data.sections.length) {
+      if (data.people.length) {
         const ok = await askConfirm({
           title: "Importar árbol",
-          message: "Se reemplazarán todos los personajes, secciones y vínculos actuales por los del archivo. Exporta antes un respaldo si quieres conservarlos.",
+          message: "Se reemplazarán todos los grupos, personajes y vínculos actuales por los del archivo. Exporta antes un respaldo si quieres conservarlos.",
           confirmLabel: "Importar",
           tone: "primary",
         });
@@ -3584,6 +4026,8 @@
 
       resetWorkspaceUi();
       data = clean;
+      ui.activeGroupId = data.groups[0] ? data.groups[0].id : null;
+      groupViews = {};
       closeDialog(els.helpDialog);
       saveData();
       renderAll();
@@ -3599,7 +4043,7 @@
   }
 
   async function loadDemo() {
-    if (data.people.length || data.sections.length) {
+    if (data.people.length || data.groups.length > 1) {
       const ok = await askConfirm({
         title: "Cargar árbol de ejemplo",
         message: "Se reemplazará el contenido actual por el árbol de ejemplo de Kelly, Bard y sus hijas. Puedes exportar antes un respaldo.",
@@ -3610,6 +4054,8 @@
     }
     resetWorkspaceUi();
     data = demoData();
+    ui.activeGroupId = data.groups[0] ? data.groups[0].id : null;
+    groupViews = {};
     saveData();
     try {
       window.localStorage.setItem(LAYOUT_KEY, "1");
@@ -3625,13 +4071,15 @@
   async function clearAll() {
     const ok = await askConfirm({
       title: "Vaciar el árbol",
-      message: "Se borrarán todos los personajes, secciones y vínculos de este navegador. Esta acción no se puede deshacer.",
+      message: "Se borrarán todos los grupos de familia, personajes y vínculos de este navegador. Esta acción no se puede deshacer.",
       confirmLabel: "Vaciar todo",
     });
     if (!ok) return;
 
     resetWorkspaceUi();
-    data = { sections: [], people: [], relations: [] };
+    data = { groups: [], people: [], relations: [] };
+    ensureGroup();
+    groupViews = {};
     view = { x: 0, y: 0, k: 1 };
     applyView();
     saveData();
@@ -3658,7 +4106,7 @@
     els.emptyAddBtn.addEventListener("click", () => openPersonDialog());
     els.emptyDemoBtn.addEventListener("click", () => loadDemo());
 
-    els.addSectionBtn.addEventListener("click", () => openSectionDialog());
+    els.addGroupBtn.addEventListener("click", () => openGroupDialog());
     els.menuBtn.addEventListener("click", toggleLeftPanel);
     els.detailToggleBtn.addEventListener("click", toggleDetailPanel);
     els.themeBtn.addEventListener("click", cycleTheme);
@@ -3721,7 +4169,7 @@
     });
 
     els.personName.addEventListener("input", refreshAvatarPreview);
-    els.personSection.addEventListener("change", refreshAvatarPreview);
+    els.personGroup.addEventListener("change", refreshAvatarPreview);
     els.personAvatarUrl.addEventListener("input", updateAvatarControls);
     els.personAvatarUrl.addEventListener("change", () => {
       const value = els.personAvatarUrl.value.trim();
@@ -3817,9 +4265,9 @@
     els.relationSaveBtn.addEventListener("click", handleRelationSave);
     els.relationDeleteBtn.addEventListener("click", confirmDeleteRelation);
 
-    els.sectionForm.addEventListener("submit", handleSectionSubmit);
-    els.sectionDeleteBtn.addEventListener("click", () => {
-      if (ui.sectionEditId) confirmDeleteSection(ui.sectionEditId);
+    els.groupForm.addEventListener("submit", handleGroupSubmit);
+    els.groupDeleteBtn.addEventListener("click", () => {
+      if (ui.groupEditId) confirmDeleteGroup(ui.groupEditId);
     });
 
     document.querySelectorAll("[data-close-dialog]").forEach((button) => {
@@ -3855,8 +4303,8 @@
       cancelConnect();
       renderEdges();
     });
-    els.sectionDialog.addEventListener("close", () => {
-      ui.sectionEditId = null;
+    els.groupDialog.addEventListener("close", () => {
+      ui.groupEditId = null;
     });
     els.helpDialog.addEventListener("close", () => {
       /* nada que restablecer */
@@ -3908,6 +4356,7 @@
 
     let resizeTimer = null;
     window.addEventListener("resize", () => {
+      hideContactCard();
       updatePanelChrome();
       if (resizeTimer) window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(() => {
@@ -3978,9 +4427,15 @@
       } else {
         data = stored.data;
         view = stored.view || { x: 0, y: 0, k: 1 };
+        if (stored.activeGroupId) ui.activeGroupId = stored.activeGroupId;
+        if (stored.groupViews) groupViews = { ...stored.groupViews };
       }
     } else {
       data = demoData();
+    }
+    ensureGroup();
+    if (ui.activeGroupId && groupViews[ui.activeGroupId]) {
+      view = normalizeView(groupViews[ui.activeGroupId]);
     }
 
     let migrateDemoLayout = false;
@@ -3995,6 +4450,7 @@
     applyView();
     renderAll();
     updatePanelChrome();
+    if (stored && stored.legacy) saveData();
 
     if (replaceLegacyExample) {
       fitView(false);
