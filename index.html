@@ -103,7 +103,7 @@
         </section>
 
         <div class="side-foot">
-          <span class="save-state"><span class="save-dot"></span> Guardado en este navegador</span>
+          <span class="save-state" id="syncStatus"><span class="save-dot"></span> <span class="sync-text">Guardado en este navegador</span></span>
           <button class="link-btn" id="openHelpLink">Ayuda y datos</button>
         </div>
       </aside>
@@ -403,8 +403,16 @@
       </div>
 
       <div class="help-block">
+        <h3>Compartir</h3>
+        <p class="muted">Quien tenga el enlace de esta página puede abrir y editar el mismo árbol, sin crear ninguna cuenta. Los cambios aparecen en los demás dispositivos en unos segundos.</p>
+        <div class="help-actions">
+          <button type="button" class="btn" id="helpShareBtn">Copiar enlace</button>
+        </div>
+      </div>
+
+      <div class="help-block">
         <h3>Tus datos</h3>
-        <p class="muted">Todo se guarda en este navegador, en tu equipo. Exporta un respaldo si quieres llevarlo a otro sitio o no perderlo.</p>
+        <p class="muted">Los cambios se guardan solos en el árbol compartido y también en este dispositivo. Exporta un respaldo de vez en cuando: cualquiera con el enlace puede editar o borrar.</p>
         <div class="help-actions">
           <button type="button" class="btn" id="helpExportBtn">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0 4 4m-4-4L8 7M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
