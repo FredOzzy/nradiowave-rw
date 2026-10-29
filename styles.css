@@ -514,9 +514,12 @@ h1, h2, h3, p { margin: 0; }
 .mini-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); border-color: var(--border); }
 
 .side-foot {
+  position: sticky;
+  bottom: -14px;
   margin-top: auto;
-  padding: 14px 4px 2px;
+  padding: 12px 4px 14px;
   border-top: 1px solid var(--border-soft);
+  background: var(--panel);
   display: flex;
   align-items: center;
   gap: 8px;
