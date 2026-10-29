@@ -537,7 +537,7 @@ h1, h2, h3, p { margin: 0; }
   align-items: center;
   gap: 6px;
   font-size: 10px;
-  color: var(--faint);
+  color: var(--muted);
 }
 
 .save-dot {
