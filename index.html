@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <title>Nradiowave R/W — Árbol genealógico y wiki de personajes</title>
+  <meta name="description" content="Nradiowave R/W: árboles genealógicos y wikis de personajes con vínculos de distinta cercanía.">
+  <meta name="theme-color" content="#0a0d14" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f7f2e7" media="(prefers-color-scheme: light)">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Nradiowave">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <script>
+    (() => {
+      try {
+        const saved =
+          localStorage.getItem("nradiowave.theme.v1") ||
+          localStorage.getItem("nexo.theme.v1") ||
+          "auto";
+        const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const dark = saved === "dark" || (saved !== "light" && systemDark);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      } catch {}
+    })();
+  </script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="topbar">
+      <button class="btn btn-icon menu-btn" id="menuBtn" aria-label="Abrir panel de personajes" title="Personajes">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none">
+            <path d="M8 9.5 16 23l8-13.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <circle cx="8" cy="9" r="3" fill="currentColor"/>
+            <circle cx="24" cy="9" r="3" fill="currentColor"/>
+            <circle cx="16" cy="24" r="3" fill="currentColor"/>
+          </svg>
+        </span>
+        <div class="brand-copy">
+          <span class="brand-name">Nradiowave <span class="brand-rw">R/W</span></span>
+          <span class="brand-tag">árbol genealógico</span>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn btn-ghost" id="importBtn" title="Importar un árbol desde JSON">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          <span class="btn-label">Importar</span>
+        </button>
+        <button class="btn btn-ghost" id="exportBtn" title="Descargar un respaldo en JSON">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0 4 4m-4-4L8 7M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          <span class="btn-label">Exportar</span>
+        </button>
+        <button class="btn btn-icon" id="themeBtn" title="Tema: automático" aria-label="Cambiar tema">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+        <button class="btn btn-icon" id="detailToggleBtn" title="Mostrar u ocultar la ficha" aria-label="Mostrar u ocultar la ficha" aria-pressed="true">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/><path d="m8 9 3 3-3 3"/></svg>
+        </button>
+        <button class="btn btn-icon" id="helpBtn" title="Ayuda y datos" aria-label="Ayuda y datos">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.2a2.6 2.6 0 1 1 3.7 2.4c-.8.4-1.3 1-1.3 1.9v.3"/><circle cx="12" cy="17.3" r=".7" fill="currentColor" stroke="none"/></svg>
+        </button>
+        <button class="btn btn-primary" id="addPersonBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          <span>Nuevo personaje</span>
+        </button>
+        <input type="file" id="fileInput" accept="application/json,.json" hidden>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="sidebar" id="sidebar" aria-label="Personajes y secciones">
+        <section class="side-block">
+          <div class="side-head">
+            <h2>Personajes <span class="count-pill" id="peopleCount">0</span></h2>
+          </div>
+          <label class="search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+            <input id="searchInput" type="search" placeholder="Buscar personaje…" autocomplete="off" aria-label="Buscar personaje">
+          </label>
+          <div id="peopleList" class="people-list"></div>
+        </section>
+
+        <section class="side-block side-sections">
+          <div class="side-head">
+            <h2>Secciones</h2>
+            <button class="mini-btn" id="addSectionBtn" title="Crear sección" aria-label="Crear sección">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+          </div>
+          <div id="sectionList" class="section-list"></div>
+        </section>
+
+        <div class="side-foot">
+          <span class="save-state"><span class="save-dot"></span> Guardado en este navegador</span>
+          <button class="link-btn" id="openHelpLink">Ayuda y datos</button>
+        </div>
+      </aside>
+
+      <section class="canvas-area" id="canvasArea" aria-label="Árbol de personajes">
+        <div class="canvas-viewport" id="viewport">
+          <div class="canvas-world" id="world">
+            <svg id="edgeLayer" class="edge-layer" width="6000" height="4000" aria-hidden="true"></svg>
+            <div id="nodeLayer" class="node-layer"></div>
+          </div>
+        </div>
+
+        <div class="canvas-toolbar" role="toolbar" aria-label="Herramientas del árbol">
+          <button class="tool-btn" id="canvasAddBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+            <span>Añadir</span>
+          </button>
+          <button class="tool-btn" id="connectBtn" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 13.5a4 4 0 0 0 5.7 0l2.3-2.3a4 4 0 0 0-5.7-5.7L11.6 6.7"/><path d="M13.5 10.5a4 4 0 0 0-5.7 0l-2.3 2.3a4 4 0 0 0 5.7 5.7l1.2-1.2"/></svg>
+            <span>Vincular</span>
+          </button>
+          <div class="tool-sep" aria-hidden="true"></div>
+          <button class="tool-btn active" id="familyViewBtn" aria-pressed="true" title="Mostrar solo la estructura familiar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v5M6 20v-4h12v4M6 16v-3h12v3M4 9h4l2-3h4l2 3h4"/></svg>
+            <span>Familia</span>
+          </button>
+          <button class="tool-btn" id="allViewBtn" aria-pressed="false" title="Mostrar también amistades y conocidos">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="7" r="2.5"/><circle cx="18" cy="7" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="m8.2 8.5 2.5 6.8M15.8 8.5l-2.5 6.8M8.5 7h7"/></svg>
+            <span>Todo</span>
+          </button>
+          <button class="tool-btn" id="organizeBtn" title="Alinear el árbol por generaciones">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h10M4 19h6"/><path d="m17 10 3 2-3 2"/></svg>
+            <span>Organizar</span>
+          </button>
+          <div class="tool-sep" aria-hidden="true"></div>
+          <div id="filterChip" class="filter-chip hidden"></div>
+        </div>
+
+        <div id="focusBar" class="focus-bar hidden" role="status">
+          <button type="button" class="focus-back" id="focusBackBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+            <span>Vista general</span>
+          </button>
+          <span class="focus-divider" aria-hidden="true"></span>
+          <span class="focus-copy">
+            <strong id="focusTitle">Árbol enfocado</strong>
+            <span id="focusMeta"></span>
+          </span>
+        </div>
+
+        <div id="connectHint" class="connect-hint hidden" role="status"></div>
+
+        <div id="emptyState" class="empty-state hidden">
+          <div class="empty-card">
+            <span class="empty-mark" aria-hidden="true">
+              <svg viewBox="0 0 48 48" fill="none">
+                <path d="M12 15 24 36l12-21" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <circle cx="12" cy="14" r="4.5" fill="currentColor"/>
+                <circle cx="36" cy="14" r="4.5" fill="currentColor"/>
+                <circle cx="24" cy="37" r="4.5" fill="currentColor"/>
+              </svg>
+            </span>
+            <h2>Tu árbol empieza aquí</h2>
+            <p>Crea tu primer personaje y ve tejiendo sus vínculos. El grosor de cada línea contará qué tan cerca está de los demás.</p>
+            <div class="empty-actions">
+              <button class="btn btn-primary" id="emptyAddBtn">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                Crear primer personaje
+              </button>
+              <button class="btn" id="emptyDemoBtn">Cargar ejemplo</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="canvas-hint">
+          <span>Arrastra el lienzo para moverte</span>
+          <span>·</span>
+          <span>Rueda para acercar</span>
+          <span>·</span>
+          <span>Doble clic para crear</span>
+          <span>·</span>
+          <span>Clic en una línea para editarla</span>
+        </div>
+
+        <div class="zoom-controls" aria-label="Zoom">
+          <button id="zoomInBtn" title="Acercar" aria-label="Acercar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <span id="zoomPct" class="zoom-pct">100%</span>
+          <button id="zoomOutBtn" title="Alejar" aria-label="Alejar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>
+          </button>
+          <button id="fitBtn" title="Ajustar el árbol a la vista" aria-label="Ajustar el árbol a la vista">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+          </button>
+        </div>
+      </section>
+
+      <aside class="detail" id="detail" aria-label="Ficha del personaje"></aside>
+      <div class="scrim" id="scrim" aria-hidden="true"></div>
+    </main>
+  </div>
+
+  <div class="toast-host" id="toastHost" aria-live="polite"></div>
+
+  <!-- Persona -->
+  <dialog class="modal" id="personDialog" aria-labelledby="personDialogTitle">
+    <form id="personForm" novalidate>
+      <div class="modal-head">
+        <div>
+          <span class="eyebrow" id="personDialogEyebrow">Nueva ficha</span>
+          <h2 id="personDialogTitle">Nuevo personaje</h2>
+        </div>
+        <button type="button" class="icon-close" data-close-dialog="personDialog" aria-label="Cerrar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="personName">Nombre <span class="req">*</span></label>
+          <input id="personName" name="name" maxlength="70" placeholder="Ej. Kelly" required autocomplete="off">
+        </div>
+        <div class="field avatar-field">
+          <span class="field-label">Foto de perfil</span>
+          <div class="avatar-editor">
+            <div class="avatar-preview" id="personAvatarPreview"></div>
+            <div class="avatar-editor-copy">
+              <div class="avatar-editor-actions">
+                <button class="btn small" type="button" id="personAvatarUpload">Subir imagen</button>
+                <button class="text-btn" type="button" id="personAvatarAdjust" disabled>Ajustar encuadre</button>
+                <button class="text-btn danger" type="button" id="personAvatarClear" disabled>Quitar</button>
+              </div>
+              <p class="field-help" id="personAvatarHelp">JPG, PNG o WebP. Al subirla podrás recortarla y elegir la zona visible.</p>
+            </div>
+          </div>
+          <input id="personAvatar" name="avatar" type="hidden">
+          <input id="personAvatarFile" type="file" accept="image/*" hidden>
+          <details class="avatar-url" id="personAvatarUrlDetails">
+            <summary>O usar una URL de imagen</summary>
+            <input id="personAvatarUrl" type="url" placeholder="https://…" autocomplete="off">
+          </details>
+        </div>
+        <div class="field">
+          <label for="personSection">Sección</label>
+          <select id="personSection" name="section"></select>
+        </div>
+        <div class="field">
+          <label for="personDesc">Descripción</label>
+          <textarea id="personDesc" name="description" rows="5" maxlength="1200" placeholder="Historia, personalidad, secretos… todo lo que quieras recordar de este personaje."></textarea>
+          <span class="field-help">Se mostrará en su ficha de la wiki.</span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-danger hidden" id="personDeleteBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6.5 7l.8 13h9.4l.8-13M10 11v5M14 11v5"/></svg>
+          Eliminar personaje
+        </button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close-dialog="personDialog">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar personaje</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Editor de foto de perfil -->
+  <dialog class="modal modal-crop" id="avatarCropDialog" aria-labelledby="avatarCropTitle">
+    <div class="modal-head">
+      <div>
+        <span class="eyebrow">Foto de perfil</span>
+        <h2 id="avatarCropTitle">Ajusta el encuadre</h2>
+      </div>
+      <button type="button" class="icon-close" id="avatarCropClose" aria-label="Cerrar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body crop-body">
+      <div class="crop-stage" id="cropStage" tabindex="0" role="application" aria-label="Zona de recorte. Arrastra la imagen para ajustarla.">
+        <img id="cropImage" alt="Imagen para recortar">
+        <div class="crop-grid" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <div class="crop-corner tl" aria-hidden="true"></div>
+        <div class="crop-corner tr" aria-hidden="true"></div>
+        <div class="crop-corner bl" aria-hidden="true"></div>
+        <div class="crop-corner br" aria-hidden="true"></div>
+      </div>
+      <div class="crop-controls">
+        <div class="crop-zoom-row">
+          <label for="cropZoom">Zoom</label>
+          <input id="cropZoom" type="range" min="1" max="3" step="0.01" value="1">
+          <output id="cropZoomValue" for="cropZoom">100%</output>
+        </div>
+        <p class="field-help">Arrastra la foto para elegir qué zona se verá en el perfil. Usa el zoom para acercarte.</p>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span class="spacer"></span>
+      <button type="button" class="btn" id="avatarCropCancel">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="avatarCropApply" disabled>Usar esta foto</button>
+    </div>
+  </dialog>
+
+  <!-- Vínculo -->
+  <dialog class="modal" id="relationDialog" aria-labelledby="relationDialogTitle">
+    <div class="modal-head">
+      <div>
+        <span class="eyebrow">Tipo de relación</span>
+        <h2 id="relationDialogTitle">Nuevo vínculo</h2>
+      </div>
+      <button type="button" class="icon-close" data-close-dialog="relationDialog" aria-label="Cerrar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="relation-names" id="relationNames"></p>
+      <div id="relationTypes" class="rel-grid" role="radiogroup" aria-label="Tipo de relación"></div>
+      <p class="field-help">El grosor de la línea representa la cercanía: cuanto más gruesa, más íntimo es el vínculo.</p>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-danger hidden" id="relationDeleteBtn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6.5 7l.8 13h9.4l.8-13M10 11v5M14 11v5"/></svg>
+        Eliminar vínculo
+      </button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-close-dialog="relationDialog">Cancelar</button>
+      <button type="button" class="btn btn-primary" id="relationSaveBtn" disabled>Crear vínculo</button>
+    </div>
+  </dialog>
+
+  <!-- Sección -->
+  <dialog class="modal modal-small" id="sectionDialog" aria-labelledby="sectionDialogTitle">
+    <form id="sectionForm" novalidate>
+      <div class="modal-head">
+        <div>
+          <span class="eyebrow">Organiza tu wiki</span>
+          <h2 id="sectionDialogTitle">Nueva sección</h2>
+        </div>
+        <button type="button" class="icon-close" data-close-dialog="sectionDialog" aria-label="Cerrar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="sectionName">Nombre <span class="req">*</span></label>
+          <input id="sectionName" maxlength="50" placeholder="Ej. Familia, Amistades…" required autocomplete="off">
+        </div>
+        <div class="field">
+          <label>Color</label>
+          <div class="swatches" id="sectionColors"></div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-danger hidden" id="sectionDeleteBtn">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6.5 7l.8 13h9.4l.8-13M10 11v5M14 11v5"/></svg>
+          Eliminar sección
+        </button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" data-close-dialog="sectionDialog">Cancelar</button>
+        <button type="submit" class="btn btn-primary">Guardar sección</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Ayuda -->
+  <dialog class="modal" id="helpDialog" aria-labelledby="helpDialogTitle">
+    <div class="modal-head">
+      <div>
+        <span class="eyebrow">Guía rápida</span>
+        <h2 id="helpDialogTitle">Cómo funciona Nradiowave R/W</h2>
+      </div>
+      <button type="button" class="icon-close" data-close-dialog="helpDialog" aria-label="Cerrar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <ol class="help-steps">
+        <li><strong>Crea personajes.</strong> La foto es la protagonista de cada tarjeta; debajo aparecen el nombre y su sección. Sube una imagen y ajusta el encuadre antes de guardarla. Añade una descripción libre para completar su ficha.</li>
+        <li><strong>Ordénalos en el lienzo.</strong> Arrastra cada tarjeta o pulsa <em>Organizar</em> para alinear el árbol por generaciones. Las líneas se redibujan como en un árbol genealógico.</li>
+        <li><strong>Teje vínculos.</strong> Pulsa <em>Vincular</em>, elige dos personas y define la relación. Parejas, hijos, sangre y familia usan trazados familiares; amistades y conocidos se muestran como vínculos sociales.</li>
+        <li><strong>Reduce el ruido.</strong> En <em>Familia</em> solo verás la estructura genealógica. Cambia a <em>Todo</em> para ver amistades y conocidos, o abre el árbol propio de un contacto desde su ficha.</li>
+        <li><strong>Amplía el lienzo.</strong> Retrae los paneles laterales con los botones de la barra superior. El tema sigue automáticamente al dispositivo, y puedes alternar claro/oscuro con el botón del sol.</li>
+      </ol>
+
+      <div class="help-block">
+        <h3>Grosor y tipos de vínculo</h3>
+        <div id="helpLegend" class="legend"></div>
+      </div>
+
+      <div class="help-block">
+        <h3>Atajos</h3>
+        <div class="shortcut-grid">
+          <span><kbd>N</kbd> Nuevo personaje</span>
+          <span><kbd>V</kbd> Vincular</span>
+          <span><kbd>F</kbd> Ajustar vista</span>
+          <span><kbd>Esc</kbd> Cancelar</span>
+        </div>
+      </div>
+
+      <div class="help-block">
+        <h3>Tus datos</h3>
+        <p class="muted">Todo se guarda en este navegador, en tu equipo. Exporta un respaldo si quieres llevarlo a otro sitio o no perderlo.</p>
+        <div class="help-actions">
+          <button type="button" class="btn" id="helpExportBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0 4 4m-4-4L8 7M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            Exportar
+          </button>
+          <button type="button" class="btn" id="helpImportBtn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            Importar
+          </button>
+          <button type="button" class="btn" id="helpDemoBtn">Cargar ejemplo</button>
+          <button type="button" class="btn btn-danger" id="helpResetBtn">Vaciar todo</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-primary" data-close-dialog="helpDialog">Entendido</button>
+    </div>
+  </dialog>
+
+  <!-- Confirmación -->
+  <dialog class="modal modal-small" id="confirmDialog" aria-labelledby="confirmTitle">
+    <div class="modal-head">
+      <div>
+        <span class="eyebrow">Confirmar acción</span>
+        <h2 id="confirmTitle">¿Seguro?</h2>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p id="confirmMessage" class="muted"></p>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" id="confirmCancelBtn">Cancelar</button>
+      <button type="button" class="btn btn-danger" id="confirmOkBtn">Eliminar</button>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
