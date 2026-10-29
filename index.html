@@ -81,26 +81,28 @@
 
     <main class="layout">
       <aside class="sidebar" id="sidebar" aria-label="Personajes y secciones">
-        <section class="side-block">
-          <div class="side-head">
-            <h2>Personajes <span class="count-pill" id="peopleCount">0</span></h2>
-          </div>
-          <label class="search">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
-            <input id="searchInput" type="search" placeholder="Buscar personaje…" autocomplete="off" aria-label="Buscar personaje">
-          </label>
-          <div id="peopleList" class="people-list"></div>
-        </section>
+        <div class="side-scroll">
+          <section class="side-block">
+            <div class="side-head">
+              <h2>Personajes <span class="count-pill" id="peopleCount">0</span></h2>
+            </div>
+            <label class="search">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>
+              <input id="searchInput" type="search" placeholder="Buscar personaje…" autocomplete="off" aria-label="Buscar personaje">
+            </label>
+            <div id="peopleList" class="people-list"></div>
+          </section>
 
-        <section class="side-block side-sections">
-          <div class="side-head">
-            <h2>Secciones</h2>
-            <button class="mini-btn" id="addSectionBtn" title="Crear sección" aria-label="Crear sección">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
-            </button>
-          </div>
-          <div id="sectionList" class="section-list"></div>
-        </section>
+          <section class="side-block side-sections">
+            <div class="side-head">
+              <h2>Secciones</h2>
+              <button class="mini-btn" id="addSectionBtn" title="Crear sección" aria-label="Crear sección">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+              </button>
+            </div>
+            <div id="sectionList" class="section-list"></div>
+          </section>
+        </div>
 
         <div class="side-foot">
           <span class="save-state" id="syncStatus"><span class="save-dot"></span> <span class="sync-text">Guardado en este navegador</span></span>
