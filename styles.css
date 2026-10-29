@@ -302,7 +302,7 @@ h1, h2, h3, p { margin: 0; }
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  color: var(--faint);
+  color: var(--muted);
   display: flex;
   align-items: center;
   gap: 8px;
@@ -417,7 +417,7 @@ h1, h2, h3, p { margin: 0; }
 
 .person-row-sub {
   font-size: 10.5px;
-  color: var(--faint);
+  color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -427,7 +427,7 @@ h1, h2, h3, p { margin: 0; }
 .list-empty {
   padding: 12px 8px;
   font-size: 12px;
-  color: var(--faint);
+  color: var(--muted);
   line-height: 1.5;
 }
 
@@ -483,7 +483,7 @@ h1, h2, h3, p { margin: 0; }
 
 .section-count {
   font-size: 10.5px;
-  color: var(--faint);
+  color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
