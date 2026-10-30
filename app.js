@@ -170,7 +170,7 @@
 
   function rememberGroupView() {
     const current = activeGroupId();
-    if (current) groupViews[current] = { ...view };
+    if (current) groupViews[current] = { ...(ui.radial ? ui.radial.view : view) };
   }
 
   function ensureGroup() {
@@ -275,6 +275,7 @@
     hoverCard: null,
     hoverNode: null,
     hoverPersonId: null,
+    radial: null,
   };
 
   /* ---------------- Datos de ejemplo ---------------- */
@@ -441,7 +442,10 @@
       if (seenRelations.has(key)) return;
       let id = r.id != null ? String(r.id) : uid("r");
       if (seenRelationIds.has(id)) id = uid("r");
-      out.relations.push({ id, from, to, type: r.type });
+      const label = typeof r.label === "string" ? r.label.trim().slice(0, 40) : "";
+      const entry = { id, from, to, type: r.type };
+      if (label) entry.label = label;
+      out.relations.push(entry);
       seenRelations.add(key);
       seenRelationIds.add(id);
     });
@@ -487,16 +491,17 @@
       saveTimer = null;
     }
     const currentGroupId = activeGroupId();
-    if (currentGroupId) groupViews[currentGroupId] = { ...view };
+    const storedView = ui.radial ? ui.radial.view : view;
+    if (currentGroupId) groupViews[currentGroupId] = { ...storedView };
     const payload = {
       app: "nradiowave-rw",
       version: 2,
       savedAt: new Date().toISOString(),
-      view,
+      view: storedView,
       activeGroupId: currentGroupId,
       groupViews,
       groups: data.groups,
-      people: data.people,
+      people: peopleForStorage(),
       relations: data.relations,
     };
     try {
@@ -547,7 +552,7 @@
   function localSnapshot() {
     return {
       groups: data.groups.map((group) => ({ ...group })),
-      people: syncKeyMap(data.people),
+      people: syncKeyMap(peopleForStorage()),
       relations: syncKeyMap(data.relations),
     };
   }
@@ -732,6 +737,10 @@
       const focused = ui.focusRootId ? personById(ui.focusRootId) : null;
       if (!focused || !active || focused.groupId !== active.id) {
         ui.focusRootId = null;
+      }
+      if (ui.radial) {
+        ui.radial = null;
+        if (ui.selectedId && personById(ui.selectedId)) applyRadialLayout(ui.selectedId);
       }
       Object.keys(groupViews).forEach((groupId) => {
         if (!data.groups.some((group) => group.id === groupId)) delete groupViews[groupId];
@@ -1241,6 +1250,7 @@
       relationDialogTitle: $("relationDialogTitle"),
       relationNames: $("relationNames"),
       relationTypes: $("relationTypes"),
+      relLabel: $("relLabel"),
       relationDeleteBtn: $("relationDeleteBtn"),
       relationSaveBtn: $("relationSaveBtn"),
       groupDialog: $("groupDialog"),
@@ -1326,6 +1336,24 @@
 
   function isSocialRelation(relation) {
     return !!relation && !FAMILY_TYPES.has(relation.type);
+  }
+
+  function relationWeight(relation) {
+    const config = (relation && REL_BY_ID[relation.type]) || REL_BY_ID.conocido;
+    return clamp(10 / Math.max(1, config.width), 1, 8);
+  }
+
+  function relationDisplayLabel(relation) {
+    const custom = relation && typeof relation.label === "string" ? relation.label.trim() : "";
+    if (custom) return custom;
+    const config = relation ? REL_BY_ID[relation.type] : null;
+    return config ? config.label : "Vínculo";
+  }
+
+  function shortLabel(text, max = 20) {
+    const value = String(text || "").trim();
+    if (value.length <= max) return value;
+    return `${value.slice(0, max - 1).trimEnd()}…`;
   }
 
   function relationsOf(personId) {
@@ -1722,15 +1750,16 @@
     }
 
     const list = el("div", "contact-chips");
-    entries.forEach(({ relation, other, config }) => {
+    entries.forEach(({ relation, other }) => {
       const chip = el("button", "contact-chip");
+      const label = relationDisplayLabel(relation);
       chip.type = "button";
-      chip.title = `Abrir la ficha de ${other.name} · ${config.label}`;
+      chip.title = `Abrir la ficha de ${other.name} · ${label}`;
       const avatar = el("span", "mini-avatar contact-chip-avatar");
       paintAvatar(avatar, other);
       const copy = el("span", "contact-chip-copy");
       copy.appendChild(el("span", "contact-chip-name", other.name));
-      copy.appendChild(el("span", "contact-chip-type", config.label));
+      copy.appendChild(el("span", "contact-chip-type", label));
       chip.append(avatar, copy);
       chip.addEventListener("click", () => {
         hideContactCard();
@@ -1820,9 +1849,10 @@
           : `repeating-linear-gradient(90deg, ${config.color} 0 5px, transparent 5px 8px)`;
         wrap.appendChild(line);
 
+        const label = relationDisplayLabel(relation);
         const copy = el("span", "rel-copy");
         copy.appendChild(el("span", "rel-name", other.name));
-        copy.appendChild(el("span", "rel-type", config.label));
+        copy.appendChild(el("span", "rel-type", label));
 
         const chevron = el("span", "rel-chevron");
         chevron.innerHTML = ICONS.chevron;
@@ -1847,7 +1877,7 @@
 
         const edit = el("button", "rel-icon-btn");
         edit.type = "button";
-        edit.title = `Editar ${config.label.toLowerCase()} con ${other.name}`;
+        edit.title = `Editar ${label.toLowerCase()} con ${other.name}`;
         edit.setAttribute("aria-label", `Editar vínculo con ${other.name}`);
         edit.innerHTML = ICONS.edit;
         edit.addEventListener("click", () => openRelationDialog(relation.id));
@@ -2009,6 +2039,24 @@
 
       els.nodeLayer.appendChild(node);
     });
+
+    if (!ui.selectedId && !ui.focusRootId && ui.viewMode === "all") {
+      const visible = visiblePeople();
+      const known = visible.filter(
+        (person) => !relationsOf(person.id).some((relation) => isFamilyRelation(relation))
+      );
+      if (known.length && known.length < visible.length) {
+        const minX = Math.min(...known.map((person) => person.x));
+        const minY = Math.min(...known.map((person) => person.y));
+        const caption = el("div", "canvas-caption");
+        caption.style.transform = `translate3d(${Math.round(minX - 2)}px, ${Math.round(minY - 38)}px, 0)`;
+        caption.append(
+          el("span", "canvas-caption-dot"),
+          el("span", null, `Conocidos · ${known.length}`)
+        );
+        els.nodeLayer.appendChild(caption);
+      }
+    }
   }
 
   function contactCardAllowed(person) {
@@ -2083,7 +2131,7 @@
       paintAvatar(avatar, other);
       const copy = el("span", "contact-card-copy");
       copy.appendChild(el("span", "contact-card-name", other.name));
-      copy.appendChild(el("span", "contact-card-type", config.label));
+      copy.appendChild(el("span", "contact-card-type", relationDisplayLabel(relation)));
       row.append(avatar, copy);
       row.addEventListener("click", () => {
         hideContactCard({ restoreFocus: false });
@@ -2174,6 +2222,7 @@
       if (!moved && Math.hypot(dx, dy) > 4) {
         moved = true;
         hideContactCard();
+        if (ui.radial) ui.radial = null;
         node.classList.add("dragging");
       }
       if (!moved) return;
@@ -2475,14 +2524,13 @@
       const selected = ui.selectedRelationId === relation.id;
       let geometry;
       let socialStyle = null;
-      let labelText = config.short || config.label;
+      let labelText = relation.label ? shortLabel(relation.label, 22) : config.short || config.label;
 
       if (relation.type === "pareja") {
         geometry = coupleGeometry(a, b);
         geometry.label = { x: geometry.center.x, y: geometry.center.y - 4 };
       } else if (relation.type === "sangre") {
         geometry = curveGeometry(a, b, 0.11, relation.id.length + relation.from.length);
-        labelText = "Sangre";
       } else if (relation.type === "familia") {
         geometry = curveGeometry(a, b, 0.18, relation.id.length + relation.to.length);
         socialStyle = "9 7";
@@ -2506,7 +2554,7 @@
         dimmed,
         selected,
         socialStyle,
-        titleText: `${a.name} ↔ ${b.name}: ${config.label}`,
+        titleText: `${a.name} ↔ ${b.name}: ${relationDisplayLabel(relation)}`,
       });
     });
 
@@ -2764,6 +2812,7 @@
   function setViewMode(mode) {
     ui.viewMode = mode === "all" ? "all" : "family";
     ui.focusRootId = null;
+    if (ui.selectedId) applyRadialLayout(ui.selectedId);
     renderAll();
     window.requestAnimationFrame(() => fitView(true));
   }
@@ -2771,6 +2820,7 @@
   function openFocusTree(personId) {
     const person = personById(personId);
     if (!person) return;
+    restoreRadialPositions();
     ui.focusRootId = person.id;
     ui.selectedId = person.id;
     ui.connect.active = false;
@@ -2905,11 +2955,19 @@
 
   /* ---------------- Organización automática ---------------- */
   function organizeTree(silent = false) {
+    if (ui.radial) restoreRadialPositions();
     const people = visiblePeople();
     if (!people.length) return;
     const relations = visibleRelations();
     const personIds = new Set(people.map((person) => person.id));
     const familyRelations = relations.filter((relation) => isFamilyRelation(relation) && personIds.has(relation.from) && personIds.has(relation.to));
+    const familyIds = new Set();
+    familyRelations.forEach((relation) => {
+      familyIds.add(relation.from);
+      familyIds.add(relation.to);
+    });
+    const familyPeople = people.filter((person) => familyIds.has(person.id));
+    const knownPeople = people.filter((person) => !familyIds.has(person.id));
 
     const parent = new Map(people.map((person) => [person.id, person.id]));
     const find = (id) => {
@@ -2940,7 +2998,7 @@
     });
 
     const level = new Map();
-    people.forEach((person) => level.set(find(person.id), 0));
+    familyPeople.forEach((person) => level.set(find(person.id), 0));
     for (let pass = 0; pass < people.length + 2; pass += 1) {
       let changed = false;
       parentEdges.forEach(([p, c]) => {
@@ -2953,21 +3011,8 @@
       if (!changed) break;
     }
 
-    const socialPartner = new Map();
-    relations.filter(isSocialRelation).forEach((relation) => {
-      if (!personIds.has(relation.from) || !personIds.has(relation.to)) return;
-      if (!socialPartner.has(relation.from)) socialPartner.set(relation.from, relation.to);
-      if (!socialPartner.has(relation.to)) socialPartner.set(relation.to, relation.from);
-    });
-    people.forEach((person) => {
-      const group = find(person.id);
-      if (familyRelations.some((relation) => relation.from === person.id || relation.to === person.id)) return;
-      const neighbor = socialPartner.get(person.id);
-      if (neighbor && personById(neighbor)) level.set(group, level.get(find(neighbor)) || 0);
-    });
-
     const groups = new Map();
-    people.forEach((person) => {
+    familyPeople.forEach((person) => {
       const group = find(person.id);
       if (!groups.has(group)) groups.set(group, []);
       groups.get(group).push(person);
@@ -3005,10 +3050,65 @@
       });
     });
 
+    let familyBottom = 0;
+    let familyCenterX = baseX + 400;
+    if (familyPeople.length) {
+      const xs = familyPeople.map((person) => person.x);
+      familyBottom = Math.max(...familyPeople.map((person) => person.y + NODE_H));
+      familyCenterX = (Math.min(...xs) + Math.max(...xs) + NODE_W) / 2;
+    }
+
+    if (knownPeople.length) {
+      const anchor = new Map();
+      knownPeople.forEach((person) => {
+        let bestX = null;
+        let bestWeight = Infinity;
+        relationsOf(person.id).forEach((relation) => {
+          if (!isSocialRelation(relation)) return;
+          const otherId = relation.from === person.id ? relation.to : relation.from;
+          const other = personById(otherId);
+          if (!other || !familyIds.has(other.id)) return;
+          const weight = relationWeight(relation);
+          if (weight < bestWeight) {
+            bestWeight = weight;
+            bestX = other.x;
+          }
+        });
+        anchor.set(person.id, bestX == null ? person.x : bestX);
+      });
+      const ordered = knownPeople.slice().sort(
+        (a, b) => anchor.get(a.id) - anchor.get(b.id) || a.name.localeCompare(b.name, "es")
+      );
+      const gap = 18;
+      const compactRowGap = 40;
+      const perRow = clamp(
+        Math.floor((Math.max(totalWidth, 860) + gap) / (NODE_W + gap)),
+        3,
+        6
+      );
+      const top = familyPeople.length ? familyBottom + 118 : 140;
+      ordered.forEach((person, index) => {
+        const row = Math.floor(index / perRow);
+        const col = index % perRow;
+        const rowCount = Math.min(perRow, ordered.length - row * perRow);
+        const rowWidth = rowCount * NODE_W + (rowCount - 1) * gap;
+        const rowStart = clamp(familyCenterX - rowWidth / 2, 24, WORLD_W - rowWidth - 24);
+        person.x = rowStart + col * (NODE_W + gap);
+        person.y = top + row * (NODE_H + compactRowGap);
+      });
+    }
+
     saveData();
     renderAll();
     window.requestAnimationFrame(() => fitView(true));
-    if (!silent) toast("Árbol organizado por generaciones.", "success");
+    if (!silent) {
+      toast(
+        knownPeople.length
+          ? "Árbol organizado: familia por generaciones y conocidos en una franja aparte."
+          : "Árbol organizado por generaciones.",
+        "success"
+      );
+    }
   }
 
   /* ---------------- Grupos de familia ---------------- */
@@ -3019,8 +3119,9 @@
     hideContactCard();
     if (saveView) {
       const current = activeGroupId();
-      if (current) groupViews[current] = { ...view };
+      if (current) groupViews[current] = { ...(ui.radial ? ui.radial.view : view) };
     }
+    restoreRadialPositions();
     ui.activeGroupId = group.id;
     ui.selectedId = null;
     ui.focusRootId = null;
@@ -3119,6 +3220,10 @@
 
   function renderAll() {
     hideContactCard();
+    if (ui.radial) {
+      const center = personById(ui.radial.centerId);
+      if (!ui.selectedId || !center) restoreRadialPositions();
+    }
     renderGroups();
     renderPeopleList();
     renderNodes();
@@ -3129,15 +3234,173 @@
   }
 
   /* ---------------- Selección y avisos ---------------- */
+  /* ---------------- Disposición radial (mapa mental) ---------------- */
+  function peopleForStorage() {
+    if (!ui.radial) return data.people;
+    return data.people.map((person) => {
+      const original = ui.radial.originals.get(person.id);
+      return original ? { ...person, x: original.x, y: original.y } : person;
+    });
+  }
+
+  function restoreRadialPositions() {
+    if (!ui.radial) return null;
+    ui.radial.originals.forEach((position, id) => {
+      const person = personById(id);
+      if (!person) return;
+      person.x = position.x;
+      person.y = position.y;
+    });
+    const savedView = ui.radial.view;
+    ui.radial = null;
+    return savedView;
+  }
+
+  function radialPositions(centerId, people) {
+    const ids = new Set(people.map((person) => person.id));
+    if (!ids.has(centerId)) return null;
+    const relations = visibleRelations().filter(
+      (relation) => ids.has(relation.from) && ids.has(relation.to)
+    );
+
+    const adjacency = new Map();
+    relations.forEach((relation) => {
+      const weight = relationWeight(relation);
+      if (!adjacency.has(relation.from)) adjacency.set(relation.from, []);
+      if (!adjacency.has(relation.to)) adjacency.set(relation.to, []);
+      adjacency.get(relation.from).push({ id: relation.to, weight });
+      adjacency.get(relation.to).push({ id: relation.from, weight });
+    });
+
+    const depth = new Map([[centerId, 0]]);
+    const queue = [centerId];
+    while (queue.length) {
+      const id = queue.shift();
+      (adjacency.get(id) || []).forEach(({ id: nextId }) => {
+        if (depth.has(nextId)) return;
+        depth.set(nextId, depth.get(id) + 1);
+        queue.push(nextId);
+      });
+    }
+
+    const distance = new Map([[centerId, 0]]);
+    const visited = new Set();
+    while (visited.size < people.length) {
+      let bestId = null;
+      let best = Infinity;
+      people.forEach((person) => {
+        if (visited.has(person.id)) return;
+        const value = distance.has(person.id) ? distance.get(person.id) : Infinity;
+        if (value < best) {
+          best = value;
+          bestId = person.id;
+        }
+      });
+      if (bestId == null) break;
+      visited.add(bestId);
+      (adjacency.get(bestId) || []).forEach(({ id: nextId, weight }) => {
+        if (visited.has(nextId)) return;
+        const next = best + weight;
+        if (next < (distance.has(nextId) ? distance.get(nextId) : Infinity)) {
+          distance.set(nextId, next);
+        }
+      });
+    }
+
+    const rings = new Map();
+    const maxDepth = depth.size ? Math.max(...depth.values()) : 0;
+    people.forEach((person) => {
+      const ring = depth.has(person.id) ? depth.get(person.id) : maxDepth + 1;
+      if (!rings.has(ring)) rings.set(ring, []);
+      rings.get(ring).push(person);
+    });
+
+    const sum = people.reduce(
+      (acc, person) => ({ x: acc.x + person.x + NODE_W / 2, y: acc.y + person.y + NODE_H / 2 }),
+      { x: 0, y: 0 }
+    );
+    const cx = clamp(sum.x / people.length, 260, WORLD_W - 260);
+    const cy = clamp(sum.y / people.length, 220, WORLD_H - 220);
+
+    const positions = new Map([[centerId, { x: cx - NODE_W / 2, y: cy - NODE_H / 2 }]]);
+    const ringKeys = [...rings.keys()].filter((ring) => ring > 0).sort((a, b) => a - b);
+    const arc = Math.max(NODE_W, NODE_H) + 44;
+    let previousRadius = 0;
+    ringKeys.forEach((ringKey, index) => {
+      const items = rings.get(ringKey).slice().sort((a, b) => {
+        const da = distance.has(a.id) ? distance.get(a.id) : Infinity;
+        const db = distance.has(b.id) ? distance.get(b.id) : Infinity;
+        return da - db || a.name.localeCompare(b.name, "es");
+      });
+      const count = items.length;
+      const needed = (count * arc) / (Math.PI * 2);
+      const radius = Math.max(index === 0 ? 380 : previousRadius + 320, needed + 60);
+      previousRadius = radius;
+      const step = (Math.PI * 2) / count;
+      const offset = -Math.PI / 2 + (index % 2 ? step / 2 : 0);
+      items.forEach((person, positionIndex) => {
+        const angle = offset + positionIndex * step;
+        positions.set(person.id, {
+          x: clamp(cx + Math.cos(angle) * radius - NODE_W / 2, 24, WORLD_W - NODE_W - 24),
+          y: clamp(cy + Math.sin(angle) * radius - NODE_H / 2, 24, WORLD_H - NODE_H - 24),
+        });
+      });
+    });
+
+    return positions;
+  }
+
+  function applyRadialLayout(centerId) {
+    const group = activeGroup();
+    if (!group) return;
+    let backup = ui.radial;
+    if (backup) {
+      restoreRadialPositions();
+    } else {
+      const originals = new Map();
+      peopleInGroup(group.id).forEach((person) => {
+        originals.set(person.id, { x: person.x, y: person.y });
+      });
+      backup = { originals, view: { ...view } };
+    }
+    const people = visiblePeople();
+    if (people.length < 2 || !people.some((person) => person.id === centerId)) {
+      ui.radial = null;
+      return;
+    }
+    const positions = radialPositions(centerId, people);
+    if (!positions) {
+      ui.radial = null;
+      return;
+    }
+    positions.forEach((position, id) => {
+      const person = personById(id);
+      if (!person) return;
+      person.x = position.x;
+      person.y = position.y;
+    });
+    ui.radial = { centerId, originals: backup.originals, view: backup.view };
+  }
+
   function selectPerson(personId, options = {}) {
     const person = personById(personId);
     const group = activeGroup();
     if (!person || !group || person.groupId !== group.id) return;
+    if (ui.selectedId === personId && ui.radial) {
+      renderDetail();
+      if (options.openPanel !== false && isNarrow()) {
+        els.app.classList.add("detail-open");
+      }
+      return;
+    }
     hideContactCard();
     ui.selectedId = personId;
+    applyRadialLayout(personId);
     renderPeopleList();
     renderNodes();
+    renderEdges();
     renderDetail();
+    if (ui.radial) window.requestAnimationFrame(() => fitView(true));
     if (options.openPanel !== false && isNarrow()) {
       els.app.classList.add("detail-open");
     }
@@ -3146,9 +3409,12 @@
   function clearSelection() {
     hideContactCard();
     ui.selectedId = null;
+    const savedView = restoreRadialPositions();
     renderPeopleList();
     renderNodes();
+    renderEdges();
     renderDetail();
+    if (savedView) animateTo(savedView, 320);
   }
 
   function toast(message, type = "info") {
@@ -3679,6 +3945,7 @@
       els.relationTypes.appendChild(option);
     });
 
+    if (els.relLabel) els.relLabel.value = relation && relation.label ? relation.label : "";
     els.relationSaveBtn.disabled = !relation;
     els.relationSaveBtn.textContent = relation ? "Guardar cambios" : "Crear vínculo";
     els.relationDeleteBtn.classList.toggle("hidden", !relation);
@@ -3692,6 +3959,7 @@
     if (!ctx) return;
     const checked = els.relationTypes.querySelector('input[name="relType"]:checked');
     if (!checked) return;
+    const label = els.relLabel ? els.relLabel.value.trim().slice(0, 40) : "";
 
     if (ctx.id) {
       const relation = data.relations.find((r) => r.id === ctx.id);
@@ -3700,18 +3968,22 @@
         return;
       }
       relation.type = checked.value;
+      if (label) relation.label = label;
+      else delete relation.label;
       toast("Vínculo actualizado.", "success");
     } else {
       if (findRelationBetween(ctx.from, ctx.to)) {
         toast("Ese vínculo ya existe. Edítalo en lugar de crear otro.", "error");
         return;
       }
-      data.relations.push({
+      const relation = {
         id: uid("r"),
         from: ctx.from,
         to: ctx.to,
         type: checked.value,
-      });
+      };
+      if (label) relation.label = label;
+      data.relations.push(relation);
       toast("Vínculo creado.", "success");
     }
 
@@ -3964,7 +4236,7 @@
       version: 2,
       exportedAt: new Date().toISOString(),
       groups: data.groups,
-      people: data.people,
+      people: peopleForStorage(),
       relations: data.relations,
     };
     try {
@@ -3986,6 +4258,8 @@
 
   function resetWorkspaceUi() {
     cancelConnect();
+    if (ui.radial) restoreRadialPositions();
+    ui.radial = null;
     ui.selectedId = null;
     ui.selectedRelationId = null;
     ui.relationCtx = null;
