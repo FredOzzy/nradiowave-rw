@@ -2971,3 +2971,47 @@ kbd {
   background: rgba(255, 252, 245, 0.82);
   border-color: #d9cfba;
 }
+
+/* ===================== Tamaños dinámicos de tarjetas ===================== */
+.node.card-hero {
+  width: 204px;
+  height: 256px;
+}
+.node.card-hero .node-avatar {
+  height: 196px;
+  flex: 0 0 196px;
+}
+.node.card-hero .node-name {
+  font-size: 18px;
+}
+.node.card-direct {
+  width: 184px;
+  height: 234px;
+}
+.node.card-compact {
+  width: 160px;
+  height: 204px;
+}
+.node.card-compact .node-card {
+  border-radius: 16px;
+}
+.node.card-compact .node-avatar {
+  height: 150px;
+  flex: 0 0 150px;
+  font-size: 30px;
+}
+.node.card-compact .node-copy {
+  padding: 4px 8px 6px;
+}
+.node.card-compact .node-name {
+  font-size: 14px;
+}
+.node.card-compact .node-meta {
+  font-size: 10px;
+}
+.node.card-compact .node-social-badge {
+  top: 6px;
+  right: 6px;
+  padding: 2px 5px;
+  font-size: 10px;
+}
