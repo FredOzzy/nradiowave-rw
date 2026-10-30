@@ -13,7 +13,7 @@
 - Fichas de personaje con foto recortable (editor de encuadre y zoom).
 - Grupos de familia independientes: cada uno con su propio árbol, personajes y vínculos.
 - Contactos y conocidos a un vistazo al pasar el cursor sobre una tarjeta en modo Familia.
-- Disposición radial tipo mapa mental al seleccionar un personaje, con los vínculos más cercanos alrededor y los más lejanos hacia la orilla; al cerrar la ficha vuelve la disposición original.
+- Disposición radial tipo mapa mental al seleccionar un personaje: enfoca solo a su familia y a sus propios contactos (omitiendo conocidos ajenos sin relación con él), con tarjetas dinámicas (héroe para el protagonista, tamaño medio para vínculos directos y compacto para familiares secundarios) para mayor claridad visual; al deseleccionar se restaura el árbol original.
 - En modo Todo, los conocidos se agrupan en una franja compacta bajo la familia para no mezclarse con las generaciones.
 - Nombre personalizado para cada vínculo («Prima», «Compañero de trabajo», «Vecina»…) manteniendo el color y el grosor del tipo elegido.
 - Búsqueda de personajes y vínculos con distinto grosor según la cercanía.
