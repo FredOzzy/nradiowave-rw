@@ -2848,9 +2848,9 @@
   function setViewMode(mode) {
     ui.viewMode = mode === "all" ? "all" : "family";
     ui.focusRootId = null;
-    if (ui.selectedId) applyRadialLayout(ui.selectedId);
+    restoreRadialPositions();
     renderAll();
-    window.requestAnimationFrame(() => fitView(true));
+    organizeTree(true);
   }
 
   function openFocusTree(personId) {
@@ -3429,7 +3429,7 @@
     const person = personById(personId);
     const group = activeGroup();
     if (!person || !group || person.groupId !== group.id) return;
-    if (ui.selectedId === personId && ui.radial) {
+    if (ui.selectedId === personId) {
       renderDetail();
       if (options.openPanel !== false && isNarrow()) {
         els.app.classList.add("detail-open");
@@ -3437,13 +3437,10 @@
       return;
     }
     hideContactCard();
+    restoreRadialPositions();
     ui.selectedId = personId;
-    applyRadialLayout(personId);
-    renderPeopleList();
-    renderNodes();
-    renderEdges();
-    renderDetail();
-    if (ui.radial) window.requestAnimationFrame(() => fitView(true));
+    renderAll();
+    organizeTree(true);
     if (options.openPanel !== false && isNarrow()) {
       els.app.classList.add("detail-open");
     }
@@ -3452,12 +3449,9 @@
   function clearSelection() {
     hideContactCard();
     ui.selectedId = null;
-    const savedView = restoreRadialPositions();
-    renderPeopleList();
-    renderNodes();
-    renderEdges();
-    renderDetail();
-    if (savedView) animateTo(savedView, 320);
+    restoreRadialPositions();
+    renderAll();
+    organizeTree(true);
   }
 
   function toast(message, type = "info") {
