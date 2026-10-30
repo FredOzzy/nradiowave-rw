@@ -2,12 +2,12 @@
    Estrategia: red primero (para no servir versiones viejas) con la copia en
    caché como respaldo cuando no hay conexión. */
 
-const VERSION = "nradiowave-v9";
+const VERSION = "nradiowave-v10";
 const PRECACHE = [
   "./",
   "./index.html",
   "./styles.css?v=8",
-  "./app.js?v=7",
+  "./app.min.js?v=1",
   "./fonts/fredoka-latin.woff2",
   "./manifest.webmanifest",
   "./icons/icon-192.png",

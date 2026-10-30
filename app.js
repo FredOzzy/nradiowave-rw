@@ -137,8 +137,55 @@
     return `${n} ${n === 1 ? singular : pluralWord}`;
   }
 
+  let data = { groups: [], people: [], relations: [] };
+  const dataIndex = {
+    groups: new Map(),
+    people: new Map(),
+    relations: new Map(),
+    peopleByGroup: new Map(),
+    relationPairs: new Map(),
+  };
+
+  function reindexData() {
+    const groups = Array.isArray(data.groups) ? data.groups : [];
+    const people = Array.isArray(data.people) ? data.people : [];
+    const relations = Array.isArray(data.relations) ? data.relations : [];
+
+    dataIndex.groups = new Map(groups.map((group) => [String(group.id), group]));
+    dataIndex.people = new Map(people.map((person) => [String(person.id), person]));
+    dataIndex.relations = new Map(relations.map((relation) => [String(relation.id), relation]));
+
+    const peopleByGroup = new Map();
+    people.forEach((person) => {
+      const key = String(person.groupId ?? "");
+      const bucket = peopleByGroup.get(key) || [];
+      bucket.push(person);
+      peopleByGroup.set(key, bucket);
+    });
+    dataIndex.peopleByGroup = peopleByGroup;
+
+    const relationPairs = new Map();
+    relations.forEach((relation) => {
+      const left = String(relation.from);
+      const right = String(relation.to);
+      const key = left < right ? `${left}\u0000${right}` : `${right}\u0000${left}`;
+      if (!relationPairs.has(key)) relationPairs.set(key, relation);
+    });
+    dataIndex.relationPairs = relationPairs;
+  }
+
+  function replaceData(next) {
+    data = next && typeof next === "object" ? next : { groups: [], people: [], relations: [] };
+    if (!Array.isArray(data.groups)) data.groups = [];
+    if (!Array.isArray(data.people)) data.people = [];
+    if (!Array.isArray(data.relations)) data.relations = [];
+    reindexData();
+    return data;
+  }
+
   function groupById(id) {
-    return data.groups.find((group) => group.id === id) || null;
+    if (id == null) return null;
+    return dataIndex.groups.get(String(id)) || null;
   }
 
   function activeGroup() {
@@ -151,7 +198,8 @@
   }
 
   function peopleInGroup(groupId) {
-    return data.people.filter((person) => person.groupId === groupId);
+    if (groupId == null) return [];
+    return dataIndex.peopleByGroup.get(String(groupId)) || [];
   }
 
   function relationsInGroup(groupId) {
@@ -160,7 +208,13 @@
   }
 
   function personById(id) {
-    return data.people.find((p) => p.id === id) || null;
+    if (id == null) return null;
+    return dataIndex.people.get(String(id)) || null;
+  }
+
+  function relationById(id) {
+    if (id == null) return null;
+    return dataIndex.relations.get(String(id)) || null;
   }
 
   function colorOf(person) {
@@ -180,6 +234,7 @@
         name: DEFAULT_GROUP_NAME,
         color: GROUP_COLORS[0],
       });
+      reindexData();
     }
     if (!groupById(ui.activeGroupId)) ui.activeGroupId = data.groups[0].id;
     return activeGroup();
@@ -243,7 +298,6 @@
   }
 
   /* ---------------- Estado ---------------- */
-  let data = { groups: [], people: [], relations: [] };
   let view = { x: 0, y: 0, k: 1 };
   let groupViews = {};
   let saveTimer = null;
@@ -725,7 +779,7 @@
     sync.lastAt = Date.now();
     const changed = stable(next) !== stable(data);
     if (changed) {
-      data = next;
+      replaceData(next);
       if (!data.groups.some((group) => group.id === ui.activeGroupId)) {
         ui.activeGroupId = data.groups[0] ? data.groups[0].id : null;
       }
@@ -3841,6 +3895,7 @@
           const otherId = relation.from === person.id ? relation.to : relation.from;
           return validIds.has(otherId);
         });
+        reindexData();
         if (ui.focusRootId === person.id) ui.focusRootId = null;
         ui.activeGroupId = groupId;
         toast(`Ficha actualizada. Movida a «${targetGroup.name}»; se quitaron los vínculos con el grupo anterior.`, "success");
@@ -3872,6 +3927,7 @@
       rememberGroupView();
       ui.activeGroupId = groupId;
       data.people.push(person);
+      reindexData();
       newId = person.id;
       ui.selectedId = person.id;
       toast("Personaje añadido.", "success");
@@ -3901,6 +3957,7 @@
     if (ui.personEditId === personId) closeDialog(els.personDialog);
     data.people = data.people.filter((p) => p.id !== personId);
     data.relations = data.relations.filter((r) => r.from !== personId && r.to !== personId);
+    reindexData();
     if (ui.selectedId === personId) {
       ui.selectedId = null;
       els.app.classList.remove("detail-open");
@@ -3912,13 +3969,13 @@
 
   /* ---------------- Vínculos ---------------- */
   function findRelationBetween(a, b) {
-    return data.relations.find(
-      (r) => (r.from === a && r.to === b) || (r.from === b && r.to === a)
-    ) || null;
+    if (a == null || b == null) return null;
+    const key = String(a) < String(b) ? `${String(a)}\u0000${String(b)}` : `${String(b)}\u0000${String(a)}`;
+    return dataIndex.relationPairs.get(key) || null;
   }
 
   function openRelationDialog(relationId = null, fromId = null, toId = null) {
-    let relation = relationId ? data.relations.find((r) => r.id === relationId) : null;
+    let relation = relationId ? relationById(relationId) : null;
     if (relationId && !relation) {
       toast("Ese vínculo ya no existe.", "error");
       return;
@@ -3999,7 +4056,7 @@
     const label = els.relLabel ? els.relLabel.value.trim().slice(0, 40) : "";
 
     if (ctx.id) {
-      const relation = data.relations.find((r) => r.id === ctx.id);
+      const relation = relationById(ctx.id);
       if (!relation) {
         toast("Ese vínculo ya no existe.", "error");
         return;
@@ -4007,6 +4064,7 @@
       relation.type = checked.value;
       if (label) relation.label = label;
       else delete relation.label;
+      reindexData();
       toast("Vínculo actualizado.", "success");
     } else {
       if (findRelationBetween(ctx.from, ctx.to)) {
@@ -4021,6 +4079,7 @@
       };
       if (label) relation.label = label;
       data.relations.push(relation);
+      reindexData();
       toast("Vínculo creado.", "success");
     }
 
@@ -4035,7 +4094,7 @@
   async function confirmDeleteRelation() {
     const ctx = ui.relationCtx;
     if (!ctx || !ctx.id) return;
-    const relation = data.relations.find((r) => r.id === ctx.id);
+    const relation = relationById(ctx.id);
     if (!relation) return;
 
     const personA = personById(relation.from);
@@ -4048,6 +4107,7 @@
     if (!ok) return;
 
     data.relations = data.relations.filter((r) => r.id !== relation.id);
+    reindexData();
     ui.selectedRelationId = null;
     ui.relationCtx = null;
     saveData();
@@ -4119,6 +4179,7 @@
       };
       rememberGroupView();
       data.groups.push(group);
+      reindexData();
       ui.activeGroupId = group.id;
       ui.selectedId = null;
       ui.focusRootId = null;
@@ -4156,6 +4217,7 @@
       (relation) => !ids.has(relation.from) && !ids.has(relation.to)
     );
     data.groups = data.groups.filter((item) => item.id !== groupId);
+    reindexData();
     delete groupViews[groupId];
 
     const wasActive = ui.activeGroupId === groupId;
@@ -4336,7 +4398,7 @@
       }
 
       resetWorkspaceUi();
-      data = clean;
+      replaceData(clean);
       ui.activeGroupId = data.groups[0] ? data.groups[0].id : null;
       groupViews = {};
       closeDialog(els.helpDialog);
@@ -4364,7 +4426,7 @@
       if (!ok) return;
     }
     resetWorkspaceUi();
-    data = demoData();
+    replaceData(demoData());
     ui.activeGroupId = data.groups[0] ? data.groups[0].id : null;
     groupViews = {};
     saveData();
@@ -4388,7 +4450,7 @@
     if (!ok) return;
 
     resetWorkspaceUi();
-    data = { groups: [], people: [], relations: [] };
+    replaceData({ groups: [], people: [], relations: [] });
     ensureGroup();
     groupViews = {};
     view = { x: 0, y: 0, k: 1 };
@@ -4732,17 +4794,17 @@
     let replaceLegacyExample = false;
     if (stored) {
       if (isLegacyDemoWorkspace(stored.data)) {
-        data = demoData();
+        replaceData(demoData());
         view = { x: 0, y: 0, k: 1 };
         replaceLegacyExample = true;
       } else {
-        data = stored.data;
+        replaceData(stored.data);
         view = stored.view || { x: 0, y: 0, k: 1 };
         if (stored.activeGroupId) ui.activeGroupId = stored.activeGroupId;
         if (stored.groupViews) groupViews = { ...stored.groupViews };
       }
     } else {
-      data = demoData();
+      replaceData(demoData());
     }
     ensureGroup();
     if (ui.activeGroupId && groupViews[ui.activeGroupId]) {
