@@ -1338,6 +1338,16 @@
     return !!relation && !FAMILY_TYPES.has(relation.type);
   }
 
+  function sizeOf(person) {
+    if (!person) return { w: NODE_W, h: NODE_H, cls: "" };
+    if (ui.selectedId) {
+      if (person.id === ui.selectedId) return { w: 204, h: 256, cls: "card-hero" };
+      if (findRelationBetween(person.id, ui.selectedId)) return { w: 184, h: 234, cls: "card-direct" };
+      return { w: 160, h: 204, cls: "card-compact" };
+    }
+    return { w: NODE_W, h: NODE_H, cls: "" };
+  }
+
   function relationWeight(relation) {
     const config = (relation && REL_BY_ID[relation.type]) || REL_BY_ID.conocido;
     return clamp(10 / Math.max(1, config.width), 1, 8);
@@ -1409,6 +1419,16 @@
     return ids;
   }
 
+  function relevantPersonIds(targetId, groupId) {
+    const ids = new Set([targetId]);
+    familyComponentIds(targetId).forEach((id) => ids.add(id));
+    relationsInGroup(groupId).forEach((relation) => {
+      if (relation.from === targetId) ids.add(relation.to);
+      else if (relation.to === targetId) ids.add(relation.from);
+    });
+    return ids;
+  }
+
   function focusedPerson() {
     const person = ui.focusRootId ? personById(ui.focusRootId) : null;
     const group = activeGroup();
@@ -1433,6 +1453,10 @@
         directSocialIds(root.id).forEach((id) => ids.add(id));
       }
       return ids;
+    }
+
+    if (ui.selectedId && scoped.some((person) => person.id === ui.selectedId)) {
+      return relevantPersonIds(ui.selectedId, group.id);
     }
 
     if (ui.viewMode === "all") {
@@ -1974,6 +1998,8 @@
       node.tabIndex = 0;
       node.setAttribute("role", "button");
       node.title = `${person.name} · ${plural(relations.length, "vínculo", "vínculos")}`;
+      const sz = sizeOf(person);
+      if (sz.cls) node.classList.add(sz.cls);
       node.style.transform = `translate3d(${person.x}px, ${person.y}px, 0)`;
       node.style.setProperty("--node-color", color);
       node.style.setProperty("--node-glow", hexToRgba(color, 0.18));
@@ -2273,25 +2299,29 @@
   }
 
   function nodeRect(person) {
+    const s = sizeOf(person);
     return {
       left: person.x,
-      right: person.x + NODE_W,
+      right: person.x + s.w,
       top: person.y,
-      bottom: person.y + NODE_H,
-      cx: person.x + NODE_W / 2,
-      cy: person.y + NODE_H / 2,
+      bottom: person.y + s.h,
+      cx: person.x + s.w / 2,
+      cy: person.y + s.h / 2,
+      w: s.w,
+      h: s.h,
     };
   }
 
   function boundaryPoint(person, targetX, targetY) {
-    const cx = person.x + NODE_W / 2;
-    const cy = person.y + NODE_H / 2;
+    const s = sizeOf(person);
+    const cx = person.x + s.w / 2;
+    const cy = person.y + s.h / 2;
     const dx = targetX - cx;
     const dy = targetY - cy;
     if (!dx && !dy) return { x: cx, y: cy };
     const t = Math.min(
-      (NODE_W / 2 + 3) / (Math.abs(dx) || 1e-9),
-      (NODE_H / 2 + 3) / (Math.abs(dy) || 1e-9)
+      (s.w / 2 + 3) / (Math.abs(dx) || 1e-9),
+      (s.h / 2 + 3) / (Math.abs(dy) || 1e-9)
     );
     return { x: cx + dx * t, y: cy + dy * t };
   }
@@ -2311,7 +2341,8 @@
   function coupleGeometry(a, b) {
     const ra = nodeRect(a);
     const rb = nodeRect(b);
-    if (Math.abs(ra.cy - rb.cy) <= NODE_H * 0.62) {
+    const avgH = (ra.h + rb.h) / 2;
+    if (Math.abs(ra.cy - rb.cy) <= avgH * 0.62) {
       const left = ra.cx <= rb.cx ? ra : rb;
       const right = ra.cx <= rb.cx ? rb : ra;
       const y = (left.cy + right.cy) / 2;
@@ -2334,8 +2365,10 @@
   }
 
   function curveGeometry(a, b, bend = 0.16, seed = 0) {
-    const ac = { x: a.x + NODE_W / 2, y: a.y + NODE_H / 2 };
-    const bc = { x: b.x + NODE_W / 2, y: b.y + NODE_H / 2 };
+    const ra = nodeRect(a);
+    const rb = nodeRect(b);
+    const ac = { x: ra.cx, y: ra.cy };
+    const bc = { x: rb.cx, y: rb.cy };
     const p1 = boundaryPoint(a, bc.x, bc.y);
     const p2 = boundaryPoint(b, ac.x, ac.y);
     const dx = p2.x - p1.x;
@@ -2613,8 +2646,9 @@
       line = svgEl("path", { class: "connect-line" });
       els.edgeLayer.appendChild(line);
     }
-    const sx = from.x + NODE_W / 2;
-    const sy = from.y + NODE_H / 2;
+    const rf = nodeRect(from);
+    const sx = rf.cx;
+    const sy = rf.cy;
     line.setAttribute("d", `M ${sx} ${sy} L ${ui.connect.pointer.x} ${ui.connect.pointer.y}`);
   }
 
@@ -2712,10 +2746,11 @@
     let maxX = -Infinity;
     let maxY = -Infinity;
     people.forEach((person) => {
-      minX = Math.min(minX, person.x);
-      minY = Math.min(minY, person.y);
-      maxX = Math.max(maxX, person.x + NODE_W);
-      maxY = Math.max(maxY, person.y + NODE_H);
+      const nr = nodeRect(person);
+      minX = Math.min(minX, nr.left);
+      minY = Math.min(minY, nr.top);
+      maxX = Math.max(maxX, nr.right);
+      maxY = Math.max(maxY, nr.bottom);
     });
 
     const padX = isNarrow() ? 26 : 56;
@@ -2750,10 +2785,11 @@
     const rect = viewportRect();
     if (!rect.width || !rect.height) return;
     const k = clamp(Math.max(view.k, 0.78), MIN_ZOOM, 1.2);
+    const nr = nodeRect(person);
     animateTo({
       k,
-      x: rect.width / 2 - (person.x + NODE_W / 2) * k,
-      y: rect.height / 2 - (person.y + NODE_H / 2) * k,
+      x: rect.width / 2 - nr.cx * k,
+      y: rect.height / 2 - nr.cy * k,
     }, 320);
   }
 
@@ -3322,9 +3358,10 @@
     const cx = clamp(sum.x / people.length, 260, WORLD_W - 260);
     const cy = clamp(sum.y / people.length, 220, WORLD_H - 220);
 
-    const positions = new Map([[centerId, { x: cx - NODE_W / 2, y: cy - NODE_H / 2 }]]);
+    const centerPerson = personById(centerId);
+    const centerSz = sizeOf(centerPerson);
+    const positions = new Map([[centerId, { x: cx - centerSz.w / 2, y: cy - centerSz.h / 2 }]]);
     const ringKeys = [...rings.keys()].filter((ring) => ring > 0).sort((a, b) => a - b);
-    const arc = Math.max(NODE_W, NODE_H) + 44;
     let previousRadius = 0;
     ringKeys.forEach((ringKey, index) => {
       const items = rings.get(ringKey).slice().sort((a, b) => {
@@ -3333,16 +3370,22 @@
         return da - db || a.name.localeCompare(b.name, "es");
       });
       const count = items.length;
+      const maxDim = items.reduce((max, p) => {
+        const s = sizeOf(p);
+        return Math.max(max, s.w, s.h);
+      }, 0);
+      const arc = Math.max(maxDim, 184) + 40;
       const needed = (count * arc) / (Math.PI * 2);
-      const radius = Math.max(index === 0 ? 380 : previousRadius + 320, needed + 60);
+      const radius = Math.max(index === 0 ? 370 : previousRadius + 300, needed + 50);
       previousRadius = radius;
       const step = (Math.PI * 2) / count;
       const offset = -Math.PI / 2 + (index % 2 ? step / 2 : 0);
       items.forEach((person, positionIndex) => {
         const angle = offset + positionIndex * step;
+        const ps = sizeOf(person);
         positions.set(person.id, {
-          x: clamp(cx + Math.cos(angle) * radius - NODE_W / 2, 24, WORLD_W - NODE_W - 24),
-          y: clamp(cy + Math.sin(angle) * radius - NODE_H / 2, 24, WORLD_H - NODE_H - 24),
+          x: clamp(cx + Math.cos(angle) * radius - ps.w / 2, 24, WORLD_W - ps.w - 24),
+          y: clamp(cy + Math.sin(angle) * radius - ps.h / 2, 24, WORLD_H - ps.h - 24),
         });
       });
     });
