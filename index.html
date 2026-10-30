@@ -30,7 +30,7 @@
     })();
   </script>
   <link rel="preload" href="fonts/fredoka-latin.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
   <div class="app" id="app">
@@ -323,6 +323,11 @@
     <div class="modal-body">
       <p class="relation-names" id="relationNames"></p>
       <div id="relationTypes" class="rel-grid" role="radiogroup" aria-label="Tipo de relación"></div>
+      <div class="field">
+        <label for="relLabel">Nombre del vínculo <span class="muted">(opcional)</span></label>
+        <input id="relLabel" maxlength="40" placeholder="Ej. Prima, compañero de trabajo, vecina…" autocomplete="off">
+        <span class="field-help">Si lo escribes, se muestra en lugar del tipo genérico. El grosor y el color de la línea siguen al tipo elegido.</span>
+      </div>
       <p class="field-help">El grosor de la línea representa la cercanía: cuanto más gruesa, más íntimo es el vínculo.</p>
     </div>
     <div class="modal-foot">
@@ -387,8 +392,9 @@
         <li><strong>Organiza grupos de familia.</strong> Cada grupo es un árbol independiente con sus propios personajes y vínculos. Crea tantos como familias, barrios o historias necesites y cambia entre ellos desde el panel lateral.</li>
         <li><strong>Crea personajes.</strong> La foto es la protagonista de cada tarjeta; debajo aparecen el nombre y su grupo. Sube una imagen y ajusta el encuadre antes de guardarla. Añade una descripción libre para completar su ficha.</li>
         <li><strong>Ordénalos en el lienzo.</strong> Arrastra cada tarjeta o pulsa <em>Organizar</em> para alinear el árbol por generaciones. Las líneas se redibujan como en un árbol genealógico.</li>
-        <li><strong>Teje vínculos.</strong> Pulsa <em>Vincular</em>, elige dos personas y define la relación. Parejas, hijos, sangre y familia usan trazados familiares; amistades y conocidos se muestran como vínculos sociales.</li>
-        <li><strong>Descubre sus contactos.</strong> En <em>Familia</em> solo verás la estructura genealógica. Pasa el cursor sobre una tarjeta para ver al instante sus amistades y conocidos, o ábrela para consultarlos en su ficha. Cambia a <em>Todo</em> para verlos como vínculos en el lienzo.</li>
+        <li><strong>Teje vínculos.</strong> Pulsa <em>Vincular</em>, elige dos personas y define la relación. Parejas, hijos, sangre y familia usan trazados familiares; amistades y conocidos se muestran como vínculos sociales. Si quieres precisar más, escribe un <em>nombre propio del vínculo</em>: «Prima», «Compañero de trabajo», «Vecina»…</li>
+        <li><strong>Explora una persona.</strong> Al seleccionar una tarjeta, el lienzo se reordena como un mapa mental: sus vínculos más cercanos quedan alrededor y los más lejanos hacia la orilla. Haz clic en el fondo para volver a la disposición anterior.</li>
+        <li><strong>Descubre sus contactos.</strong> En <em>Familia</em> solo verás la estructura genealógica. Pasa el cursor sobre una tarjeta para ver al instante sus amistades y conocidos, o ábrela para consultarlos en su ficha. Cambia a <em>Todo</em> para verlos en el lienzo: los conocidos se agrupan aparte, en una franja compacta bajo la familia.</li>
         <li><strong>Amplía el lienzo.</strong> Retrae los paneles laterales con los botones de la barra superior. El tema sigue automáticamente al dispositivo, y puedes alternar claro/oscuro con el botón del sol.</li>
       </ol>
 
@@ -454,6 +460,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
