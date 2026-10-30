@@ -2935,3 +2935,39 @@ kbd {
   .contact-card { animation: none; }
   .contact-chip:hover { transform: none; }
 }
+
+
+/* ===================== Franja de conocidos y vistas ===================== */
+.canvas-caption {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px dashed var(--border);
+  background: rgba(10, 13, 20, 0.55);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+
+.canvas-caption-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+[data-theme="light"] .canvas-caption {
+  background: rgba(255, 252, 245, 0.82);
+  border-color: #d9cfba;
+}
